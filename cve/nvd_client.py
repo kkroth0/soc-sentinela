@@ -3,6 +3,8 @@ cve/nvd_client.py — Ingestão de CVEs via NVD API 2.0.
 Respeita rate limits (50 req/30s com key, 5 req/30s sem key).
 """
 
+import json
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -13,7 +15,7 @@ from core.logger import get_logger
 
 logger = get_logger("cve.nvd_client")
 
-_RESULTS_PER_PAGE: int = 50
+_RESULTS_PER_PAGE: int = 30
 _RATE_LIMIT_DELAY: float = 0.6  # ~50 req/30s com key
 
 
@@ -22,15 +24,20 @@ def fetch_recent_cves(time_window_minutes: int | None = None) -> list[dict[str, 
     Consulta NVD API por CVEs publicadas na janela de tempo configurada.
     Retorna lista de dicts com dados normalizados de cada CVE.
     """
-    # Fixamos para as últimas 48 horas para evitar perdas (fallback robusto),
-    # pois o banco lida perfeitamente com a deduplicação.
-    window = 48 * 60
+    # Bug fix de Performance (Pense sobre):
+    # Em vez de fixar 48 horas e baixar ~700 CVEs repetidas a cada 5 minutos usando pubStartDate,
+    # usamos o lastModStartDate. Isso garante que não perderemos publicações retroativas/atrasadas
+    # (pois o lastMod muda quando a CVE sobe no site) e permite que a janela seja enxuta!
+    # Buffer de segurança de 120 minutos (2 horas) em vez de 48 horas.
+    base_window = time_window_minutes or config.TIME_WINDOW_MINUTES
+    window = max(base_window, 120)  # Garante pelo menos 2h de fallback
+    
     now = datetime.now(timezone.utc)
     start = now - timedelta(minutes=window)
 
     params: dict[str, Any] = {
-        "pubStartDate": start.strftime("%Y-%m-%dT%H:%M:%S.000"),
-        "pubEndDate": now.strftime("%Y-%m-%dT%H:%M:%S.000"),
+        "lastModStartDate": start.strftime("%Y-%m-%dT%H:%M:%S.000"),
+        "lastModEndDate": now.strftime("%Y-%m-%dT%H:%M:%S.000"),
         "resultsPerPage": _RESULTS_PER_PAGE,
         "startIndex": 0,
     }
@@ -53,9 +60,33 @@ def fetch_recent_cves(time_window_minutes: int | None = None) -> list[dict[str, 
             logger.error("NVD API retornou HTTP %d: %s", response.status_code, response.text[:200])
             break
 
-        data = response.json()
-        total_results = data.get("totalResults", 0)
-        vulnerabilities = data.get("vulnerabilities", [])
+        try:
+            data = response.json()
+            total_results = data.get("totalResults", 0)
+            vulnerabilities = data.get("vulnerabilities", [])
+        except json.JSONDecodeError as exc:
+            # Bug fix: NVD API occasionally drops connection or returns malformed JSON
+            # We must skip this page but extract totalResults so we don't break pagination
+            logger.error(
+                "Falha ao decodificar JSON NVD (startIndex=%d): %s. Snippet: %s",
+                params["startIndex"], exc, response.text[-200:]
+            )
+            
+            # Tenta extrair o totalResults via regex para manter a paginação funcionando
+            match = re.search(r'"totalResults":\s*(\d+)', response.text)
+            if match:
+                total_results = int(match.group(1))
+            elif total_results is None:
+                # Se for a primeira página e falhar, assume 0 para abortar gracefully
+                total_results = 0
+                
+            params["startIndex"] += _RESULTS_PER_PAGE
+            time.sleep(_RATE_LIMIT_DELAY)
+            
+            if params["startIndex"] >= total_results:
+                break
+                
+            continue
 
         for vuln_wrapper in vulnerabilities:
             cve_data = vuln_wrapper.get("cve", {})

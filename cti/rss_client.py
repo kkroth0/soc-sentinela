@@ -21,7 +21,6 @@ logger = get_logger("cti.rss_client")
 # ─── Feeds por camada ─────────────────────────────────────────────────
 RSS_FEEDS: list[dict[str, Any]] = [
     # Layer 1: Vendor Security Advisories
-    {"url": "https://api.msrc.microsoft.com/update-guide/rss", "source": "Microsoft MSRC", "layer": 1},
     {"url": "https://filestore.fortinet.com/fortiguard/rss/ir.xml", "source": "FortiGuard IR", "layer": 1},
     {"url": "https://filestore.fortinet.com/fortiguard/rss/outbreakalert.xml", "source": "FortiGuard Outbreak", "layer": 1},
     {"url": "https://feeds.feedburner.com/GoogleChromeReleases", "source": "Google Chrome Releases", "layer": 1},

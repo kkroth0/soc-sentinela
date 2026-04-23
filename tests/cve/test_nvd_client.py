@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
@@ -105,3 +106,34 @@ class TestNvdClient:
         
         results = fetch_recent_cves()
         assert results == []
+
+    @patch("cve.nvd_client.http_client.get")
+    def test_nvd_api_json_decode_error_skip(self, mock_get):
+        """Testa se o cliente pula páginas com JSON quebrado e extrai o totalResults via regex."""
+        # 2 páginas: página 1 tem JSON quebrado, página 2 é válida
+        page2 = {
+            "totalResults": 60,
+            "vulnerabilities": [{"cve": {"id": f"CVE-2026-{i}", "metrics": {}}} for i in range(30, 60)]
+        }
+
+        def mock_json_decode_error():
+            raise json.JSONDecodeError("Expecting value", "", 0)
+
+        # Mock page 1 to raise JSONDecodeError, Mock page 2 to return valid JSON
+        mock_response_1 = MagicMock(status_code=200, text='{"totalResults": 60, "vul')
+        mock_response_1.json.side_effect = mock_json_decode_error
+        
+        mock_response_2 = MagicMock(status_code=200, text=json.dumps(page2))
+        mock_response_2.json.return_value = page2
+
+        mock_get.side_effect = [mock_response_1, mock_response_2]
+
+        with patch("cve.nvd_client.time.sleep"):
+            # O mock de configuração deve ser garantido caso outros testes o tenham mudado,
+            # mas podemos apenas rodar.
+            results = fetch_recent_cves(time_window_minutes=60)
+
+        # Deve ter pulado a primeira página (perdendo 30), mas pegado a segunda página com 30 itens.
+        assert len(results) == 30
+        assert mock_get.call_count == 2
+
