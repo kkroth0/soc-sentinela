@@ -1,0 +1,42 @@
+# Controle de versão
+.git/
+.gitignore
+
+# Ambiente
+.env
+.env.example
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Dados locais
+data/
+*.db
+
+# Não necessário em produção
+tests/
+samples/
+scratch/
+*.md
+
+# Testes e qualidade
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Docker (evitar recursão)
+.dockerignore
+Dockerfile
+docker-compose.yml

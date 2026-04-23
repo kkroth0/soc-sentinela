@@ -1,0 +1,71 @@
+"""
+config.py — Centraliza TODAS as variáveis de ambiente.
+Nenhum outro módulo deve chamar os.getenv() diretamente.
+Caminhos de arquivo são sempre resolvidos como absolutos.
+"""
+
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ─── Diretório-base do projeto ────────────────────────────────────────
+BASE_DIR: str = os.path.dirname(os.path.abspath(__file__))
+
+# ─── APIs ─────────────────────────────────────────────────────────────
+NVD_API_KEY: str = os.getenv("NVD_API_KEY", "")
+DEEPL_API_KEY: str = os.getenv("DEEPL_API_KEY", "")
+GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+
+
+# ─── Microsoft Teams ──────────────────────────────────────────────────
+TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
+TEAMS_WEBHOOK_SECRET: str = os.getenv("TEAMS_WEBHOOK_SECRET", "")
+TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+
+# ─── Microsoft Graph API (SharePoint) ────────────────────────────────
+GRAPH_TENANT_ID: str = os.getenv("GRAPH_TENANT_ID", "")
+GRAPH_CLIENT_ID: str = os.getenv("GRAPH_CLIENT_ID", "")
+GRAPH_CLIENT_SECRET: str = os.getenv("GRAPH_CLIENT_SECRET", "")
+SHAREPOINT_SITE_URL: str = os.getenv("SHAREPOINT_SITE_URL", "")
+SHAREPOINT_FILE_PATH: str = os.getenv("SHAREPOINT_FILE_PATH", "")
+
+# ─── OneDrive Pessoal (Alternativa ao SharePoint Corporativo) ───────
+ONEDRIVE_DIRECT_URL: str = os.getenv("ONEDRIVE_DIRECT_URL", "")
+
+# ─── E-mail / Power Automate ─────────────────────────────────────────
+EMAIL_FLOW_URL: str = os.getenv("EMAIL_FLOW_URL", "")
+SOC_EMAIL: str = os.getenv("SOC_EMAIL", "")
+
+# ─── Thresholds e janelas de tempo ────────────────────────────────────
+MIN_CVSS_SCORE: float = float(os.getenv("MIN_CVSS_SCORE", "2.0"))
+TIME_WINDOW_MINUTES: int = int(os.getenv("TIME_WINDOW_MINUTES", "5"))
+NEWS_TIME_WINDOW_MINUTES: int = int(os.getenv("NEWS_TIME_WINDOW_MINUTES", "60"))
+CISA_KEV_CACHE_HOURS: int = int(os.getenv("CISA_KEV_CACHE_HOURS", "24"))
+
+# ─── Caminhos de arquivo — sempre absolutos ──────────────────────────
+BOT_DB_PATH: str = os.path.abspath(
+    os.getenv("BOT_DB_PATH", os.path.join(BASE_DIR, "data", "bot_database.db"))
+)
+ASSETS_CACHE_PATH: str = os.path.abspath(
+    os.getenv("ASSETS_CACHE_PATH", os.path.join(BASE_DIR, "data", "clients_assets.xlsx"))
+)
+
+# ─── Servidor de comandos ────────────────────────────────────────────
+COMMAND_PORT: int = int(os.getenv("COMMAND_PORT", "8765"))
+
+# ─── URLs base de APIs externas (não configuráveis via env) ──────────
+NVD_BASE_URL: str = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+EPSS_BASE_URL: str = "https://api.first.org/data/v1/epss"
+CISA_KEV_URL: str = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+
+# Detecta se é API Free (:fx no final) ou Pro para setar a URL correta
+DEEPL_BASE_URL: str = (
+    "https://api-free.deepl.com/v2/translate"
+    if DEEPL_API_KEY.endswith(":fx")
+    else "https://api.deepl.com/v2/translate"
+)
+GRAPH_BASE_URL: str = "https://graph.microsoft.com/v1.0"
+GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
+GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")

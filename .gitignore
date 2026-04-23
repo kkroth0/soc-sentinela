@@ -1,0 +1,39 @@
+# Ambiente
+.env
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Dados de runtime
+data/*.db
+data/*.xlsx
+*.db
+
+# Testes
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type checking
+.mypy_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporários
+scratch/
+*.log
+*.tmp
+*.bak

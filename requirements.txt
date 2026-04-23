@@ -1,0 +1,25 @@
+# ══════════════════════════════════════════════════════════════════════
+# SOC Sentinel — Dependências Python (Produção)
+# ══════════════════════════════════════════════════════════════════════
+
+# HTTP e Networking
+requests>=2.31.0
+urllib3>=2.0.0
+
+# Scheduler
+APScheduler>=3.10.0
+
+# RSS Feeds
+feedparser>=6.0.0
+
+# Excel / Assets
+openpyxl>=3.1.0
+
+# Tradução (fallback quando DeepL não disponível)
+googletrans==4.0.0-rc.1
+
+# Microsoft Graph API (Autenticação)
+msal>=1.28.0
+
+# Variáveis de ambiente
+python-dotenv>=1.0.0
