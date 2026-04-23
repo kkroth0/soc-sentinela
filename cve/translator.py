@@ -1,21 +1,18 @@
 """
 cve/translator.py — Tradução de descrições de CVEs para pt-BR.
-DeepL (primário) → Groq Llama-3.1 (fallback) → texto original.
+Groq Llama-3.1/3.3 (One-Shot).
 """
 
 from typing import Any
-
-import config
-from core.clients import http_client
 from core.clients.groq_client import chat_completion
 from core.logger import get_logger
 
 logger = get_logger("cve.translator")
 
-# ─── Prompt de Tradução CVE (usado no fallback Groq) ─────────────────
+# ─── Prompt de Tradução CVE ──────────────────────────────────────────
 
 _CVE_TRANSLATION_SYSTEM_PROMPT = (
-  "You are a senior CVE analyst at NIST with deep expertise in vulnerability disclosure.\n"
+    "You are a senior CVE analyst at NIST with deep expertise in vulnerability disclosure.\n"
     "Your sole task is to translate CVE descriptions from English to Brazilian Portuguese "
     "with flawless technical accuracy.\n\n"
     "Rules:\n"
@@ -29,34 +26,8 @@ _CVE_TRANSLATION_SYSTEM_PROMPT = (
 )
 
 
-def _translate_deepl(text: str) -> str | None:
-    """Traduz texto usando DeepL API."""
-    if not config.DEEPL_API_KEY:
-        return None
-
-    try:
-        response = http_client.post(
-            config.DEEPL_BASE_URL,
-            headers={"Authorization": f"DeepL-Auth-Key {config.DEEPL_API_KEY}"},
-            data={
-                "text": text,
-                "source_lang": "EN",
-                "target_lang": "PT-BR",
-            },
-        )
-        if response.status_code == 200:
-            translations = response.json().get("translations", [])
-            if translations:
-                return translations[0].get("text", "")
-        else:
-            logger.warning("DeepL retornou HTTP %d", response.status_code)
-    except Exception as exc:
-        logger.warning("Falha DeepL: %s", exc)
-    return None
-
-
 def _translate_groq(text: str) -> str | None:
-    """Tradução técnica rigorosa via Groq (Llama-3.1). Fallback do DeepL."""
+    """Tradução técnica rigorosa via Groq (Llama-3.1)."""
     try:
         messages = [
             {"role": "system", "content": _CVE_TRANSLATION_SYSTEM_PROMPT},
@@ -69,18 +40,11 @@ def _translate_groq(text: str) -> str | None:
 
 
 def translate_text(text: str) -> str:
-    """Traduz texto para pt-BR. DeepL (primário) → Groq (fallback) → original."""
+    """Traduz texto para pt-BR via Groq."""
     if not text or not text.strip():
         return text
 
-    # 1. Tentar DeepL (Primário)
-    logger.debug("Tentando tradução via DeepL...")
-    result = _translate_deepl(text)
-    if result:
-        return result
-
-    # 2. Tentar Groq como Fallback (Llama 3.1)
-    logger.debug("DeepL falhou, usando Groq como fallback...")
+    logger.debug("Traduzindo descrição da CVE via Groq...")
     result = _translate_groq(text)
     if result:
         return result

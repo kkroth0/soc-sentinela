@@ -24,23 +24,24 @@ class TelegramNotifier(BaseNotifier):
         return "Telegram"
 
     def send_cve_alert(self, alert: StandardCVEAlert) -> bool:
-        if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+        if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID_CVE:
             return False
             
         cve_dict = asdict(alert)
         html_msg = build_cve_telegram_message(cve_dict)
-        return send_message(html_msg, parse_mode="HTML")
+        return send_message(config.TELEGRAM_CHAT_ID_CVE, html_msg, parse_mode="HTML")
 
     def send_cti_news(self, news: StandardCTINews) -> bool:
-        if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+        if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID_CTI:
             return False
             
         news_dict = asdict(news)
         html_msg = build_news_telegram_message(news_dict)
-        return send_message(html_msg, parse_mode="HTML")
+        return send_message(config.TELEGRAM_CHAT_ID_CTI, html_msg, parse_mode="HTML")
 
     def send_report(self, stats: dict[str, Any], report_type: str) -> bool:
-        if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
+        chat_id = config.TELEGRAM_CHAT_ID_CTI or config.TELEGRAM_CHAT_ID_CVE
+        if not config.TELEGRAM_BOT_TOKEN or not chat_id:
             return False
 
         if report_type == "weekly":
@@ -48,4 +49,4 @@ class TelegramNotifier(BaseNotifier):
         else:
             html_msg = build_monthly_report_telegram(stats)
 
-        return send_message(html_msg, parse_mode="HTML")
+        return send_message(chat_id, html_msg, parse_mode="HTML")

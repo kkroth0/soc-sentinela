@@ -14,15 +14,16 @@ BASE_DIR: str = os.path.dirname(os.path.abspath(__file__))
 
 # ─── APIs ─────────────────────────────────────────────────────────────
 NVD_API_KEY: str = os.getenv("NVD_API_KEY", "")
-DEEPL_API_KEY: str = os.getenv("DEEPL_API_KEY", "")
 GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 
 
 # ─── Microsoft Teams ──────────────────────────────────────────────────
-TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
+TEAMS_WEBHOOK_URL_CVE: str = os.getenv("TEAMS_WEBHOOK_URL_CVE", "")
+TEAMS_WEBHOOK_URL_CTI: str = os.getenv("TEAMS_WEBHOOK_URL_CTI", "")
 TEAMS_WEBHOOK_SECRET: str = os.getenv("TEAMS_WEBHOOK_SECRET", "")
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_CHAT_ID_CVE: str = os.getenv("TELEGRAM_CHAT_ID_CVE", "")
+TELEGRAM_CHAT_ID_CTI: str = os.getenv("TELEGRAM_CHAT_ID_CTI", "")
 
 # ─── Microsoft Graph API (SharePoint) ────────────────────────────────
 GRAPH_TENANT_ID: str = os.getenv("GRAPH_TENANT_ID", "")
@@ -60,12 +61,6 @@ NVD_BASE_URL: str = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 EPSS_BASE_URL: str = "https://api.first.org/data/v1/epss"
 CISA_KEV_URL: str = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 
-# Detecta se é API Free (:fx no final) ou Pro para setar a URL correta
-DEEPL_BASE_URL: str = (
-    "https://api-free.deepl.com/v2/translate"
-    if DEEPL_API_KEY.endswith(":fx")
-    else "https://api.deepl.com/v2/translate"
-)
 GRAPH_BASE_URL: str = "https://graph.microsoft.com/v1.0"
 GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
 GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")

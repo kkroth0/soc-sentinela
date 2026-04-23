@@ -1,54 +1,78 @@
 """
-cti/summarizer.py — Resumo de artigos CTI via Groq (Llama-3.1).
-Recebe textos previamente traduzidos e gera resumo técnico focado no analista de SOC.
+cti/summarizer.py — Tradução e Resumo de artigos CTI via Groq (Llama-3.1/3.3).
+One-Shot: Lê em Inglês e cospe o título e os 3 parágrafos de resumo em pt-BR.
+Possui Guardrails Anti-Alucinação para impedir invenção de IoCs e CVEs.
 """
 
+import json
 from typing import Any
 from core.clients.groq_client import chat_completion
 from core.logger import get_logger
 
 logger = get_logger("cti.summarizer")
 
-# ─── Prompt de Summarização CTI ──────────────────────────────────────
+# ─── Prompt de Summarização e Tradução CTI ───────────────────────────
 
 _SYSTEM_PROMPT = (
-    "You are a technical summary engine for SOC analysts."
-    "Return only plain text. No Markdown, no greetings, no meta-commentary."
+    "You are an expert SOC Analyst and forensic translator. "
+    "Your task is to read cyber threat intelligence (CTI) articles in English "
+    "and output a structured JSON response translating and summarizing it into Brazilian Portuguese.\n\n"
+    "STRICT ANTI-HALLUCINATION GUARDRAILS:\n"
+    "- NEVER invent CVE numbers, threat actor names, or Indicators of Compromise (IoCs).\n"
+    "- If a detail is not explicitly mentioned in the text, DO NOT include it.\n"
+    "- Translate technical cybersecurity jargon accurately (e.g. do not translate 'Buffer Overflow' literally).\n\n"
+    "Return ONLY a valid JSON object with the following keys:\n"
+    "{\n"
+    '  "title_pt": "Translated title in pt-BR",\n'
+    '  "summary_pt": "Summary in pt-BR strictly following the 3 paragraph rule"\n'
+    "}\n\n"
+    "3 Paragraph Rule for 'summary_pt':\n"
+    "Paragraph 1: What was discovered or occurred (threat, vulnerability, campaign).\n"
+    "Paragraph 2: Impact — who is affected, attack surface, severity.\n"
+    "Paragraph 3: Recommended action — patch, IoC, detection, mitigation. If none, omit this paragraph."
 )
 
 _USER_PROMPT_TEMPLATE = (
-    "Summarize the article below in up to 3 short paragraphs, in Brazilian Portuguese.\n"
-    "Required structure:\n"
-    "1st paragraph: What was discovered or occurred (threat, vulnerability, campaign).\n"
-    "2nd paragraph: Impact — who is affected, attack surface, severity.\n"
-    "3rd paragraph: Recommended action — patch, IoC, detection, mitigation. "
-    "If no clear action is present in the article, omit this paragraph.\n\n"
     "Title: {title}\n"
-    "Summary: {summary}"
+    "Content: {summary}"
 )
-
 
 def summarize_article(article: dict[str, Any]) -> dict[str, Any]:
     """
-    Refina e resume o título e conteúdo do artigo usando Groq (Llama-3.1).
-    A tradução deve ser feita antes (em translator.py) para economizar tokens
-    e maximizar a qualidade terminológica em Português-BR.
+    Traduz e resume o artigo de forma estruturada (JSON) usando o Groq.
     """
-    title_pt = article.get("title_pt", article.get("title", ""))
-    summary_pt = article.get("summary_pt", article.get("summary", ""))
+    title_en = article.get("title", "")
+    summary_en = article.get("summary", "")
 
-    logger.info("Refinando resumo com Groq (Llama-3.1)...")
+    logger.info("Traduzindo e resumindo com Groq (One-Shot)...")
 
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": _USER_PROMPT_TEMPLATE.format(title=title_pt, summary=summary_pt)},
+        {"role": "user", "content": _USER_PROMPT_TEMPLATE.format(title=title_en, summary=summary_en)},
     ]
 
-    refined_summary = chat_completion(messages)
+    # Usando JSON mode via response format
+    # O groq_client suporta response_format={"type": "json_object"} nativamente?
+    # Como não temos certeza se o client suporta o kwarg, pedimos no prompt e usamos temperatura 0
+    raw_response = chat_completion(messages, temperature=0.0)
 
-    if refined_summary:
-        article["summary_pt"] = refined_summary
+    if raw_response:
+        try:
+            # Tentar parsear o JSON
+            # Remover blocos de markdown ```json caso existam
+            clean_json = raw_response.replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(clean_json)
+            
+            article["title_pt"] = parsed.get("title_pt", title_en)
+            article["summary_pt"] = parsed.get("summary_pt", summary_en)
+            article["translated"] = True
+            logger.info("Artigo processado via LLM: %s", article["title_pt"][:60])
+        except json.JSONDecodeError as exc:
+            logger.error("Falha ao parsear JSON do Groq: %s | Raw: %s", exc, raw_response[:100])
+            # Fallback seguro: joga o raw no summary
+            article["summary_pt"] = raw_response
+            article["title_pt"] = title_en
+    else:
+        logger.error("Groq não retornou resposta para o artigo.")
 
-    # Se a API falhar, o dicionário mantém o 'summary_pt' original (tradução crua).
-    logger.info("Artigo resumido: %s", title_pt[:60])
     return article

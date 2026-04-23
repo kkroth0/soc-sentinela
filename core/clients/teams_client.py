@@ -12,13 +12,13 @@ from core.logger import get_logger
 logger = get_logger("core.clients.teams_client")
 
 
-def send_card(card_payload: dict[str, Any]) -> bool:
+def send_card(webhook_url: str, card_payload: dict[str, Any]) -> bool:
     """
-    Envia um Adaptive Card para o webhook do Teams.
+    Envia um Adaptive Card para o webhook especificado do Teams.
     Retorna True se o envio foi bem-sucedido (HTTP 200), False caso contrário.
     """
-    if not config.TEAMS_WEBHOOK_URL:
-        logger.error("TEAMS_WEBHOOK_URL não configurado — card descartado")
+    if not webhook_url:
+        logger.error("Webhook URL não fornecida — card descartado")
         return False
 
     envelope = {
@@ -33,7 +33,7 @@ def send_card(card_payload: dict[str, Any]) -> bool:
     }
 
     try:
-        response = http_client.post(config.TEAMS_WEBHOOK_URL, json=envelope)
+        response = http_client.post(webhook_url, json=envelope)
         if response.status_code == 200:
             logger.info("Card enviado ao Teams com sucesso")
             return True
@@ -50,15 +50,14 @@ def send_card(card_payload: dict[str, Any]) -> bool:
         return False
 
 
-def send_multiple_cards(cards: list[dict[str, Any]], delay_seconds: float = 1.0) -> int:
+def send_multiple_cards(webhook_url: str, cards: list[dict[str, Any]], delay_seconds: float = 1.0) -> int:
     """
     Envia múltiplos Adaptive Cards ao Teams com delay entre eles.
     Retorna a quantidade de envios bem-sucedidos.
     """
-
     success_count = 0
     for i, card in enumerate(cards):
-        if send_card(card):
+        if send_card(webhook_url, card):
             success_count += 1
         if i < len(cards) - 1:
             time.sleep(delay_seconds)
