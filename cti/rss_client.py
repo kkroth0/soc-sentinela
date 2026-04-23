@@ -42,8 +42,6 @@ RSS_FEEDS: list[dict[str, Any]] = [
     {"url": "https://isc.sans.edu/rssfeed_full.xml", "source": "SANS ISC", "layer": 3},
     {"url": "https://research.checkpoint.com/feed/", "source": "Check Point Research", "layer": 3},
     {"url": "https://www.sentinelone.com/labs/feed/", "source": "SentinelOne Labs", "layer": 3},
-    {"url": "https://securelist.com/feed/", "source": "Securelist (Kaspersky)", "layer": 3},
-    {"url": "https://blog.malwarebytes.com/feed/", "source": "Malwarebytes Labs", "layer": 3},
     {"url": "https://www.welivesecurity.com/en/rss/feed/", "source": "WeLiveSecurity", "layer": 3},
     {"url": "https://any.run/cybersecurity-blog/feed/", "source": "ANY.RUN Blog", "layer": 3},
     {"url": "https://www.elastic.co/security-labs/rss/feed.xml", "source": "Elastic Security", "layer": 3},
@@ -60,12 +58,8 @@ RSS_FEEDS: list[dict[str, Any]] = [
 def fetch_recent_articles(time_window_minutes: int | None = None) -> list[dict[str, Any]]:
     """
     Coleta artigos recentes de todos os feeds RSS configurados.
-    Utiliza ThreadPoolExecutor para processar os feeds em paralelo,
-    evitando a lentidão da execução sequencial original.
     """
-    # Fixamos para as últimas 24 horas para garantir que nada passe
-    # despercebido se o bot for desligado momentaneamente
-    window = 24 * 60
+    window = time_window_minutes or config.NEWS_TIME_WINDOW_MINUTES
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=window)
     all_articles: list[dict[str, Any]] = []
 

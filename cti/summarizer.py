@@ -18,6 +18,12 @@ _SYSTEM_PROMPT = (
 
 _USER_PROMPT_TEMPLATE = (
     "Summarize the article below in up to 3 short paragraphs, in Brazilian Portuguese.\n"
+    "RULES:\n"
+    "- Every sentence must be complete. Never end mid-sentence.\n"  
+    "- Each paragraph must end with a period.\n"                 
+    "- If the article lacks enough information for a paragraph, omit it entirely "
+    "rather than writing an incomplete one.\n"                     
+    "- Do not add information not present in the article.\n\n"     
     "Required structure:\n"
     "1st paragraph: What was discovered or occurred (threat, vulnerability, campaign).\n"
     "2nd paragraph: Impact — who is affected, attack surface, severity.\n"

@@ -176,6 +176,9 @@ def _build_report_card(stats: dict[str, Any], title: str) -> dict[str, Any]:
         "type": "AdaptiveCard",
         "version": "1.4",
         "body": body,
+        "msteams": {
+            "width": "Full"
+        }
     }
 
     logger.info("Card de relatório montado: %s (%s)", title, period)

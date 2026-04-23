@@ -10,7 +10,7 @@ from core.notifications import global_dispatcher
 from core import storage
 from core.logger import get_logger
 from core.data_manager import get_asset_map
-from cti import rss_client, translator, summarizer
+from cti import rss_client, intelligence
 from cti.scorer import score_article
 
 logger = get_logger("cti.pipeline")
@@ -37,11 +37,8 @@ def _process_single_article(article: dict[str, Any], asset_map: dict[str, dict[s
 
     logger.info("Artigo APROVADO (Score: %d) — %s [Motivos: %s]", score, title, ", ".join(reasons))
 
-    # Traduzir (Literal)
-    translator.translate_article(article)
-
-    # Resumir (IA)
-    summarizer.summarize_article(article)
+    # Processamento ÚNICO de IA (Tradução + Resumo)
+    intelligence.process_article_intelligence(article)
 
     # Construir Payload Neutro (DTO)
     news = StandardCTINews(

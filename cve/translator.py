@@ -12,10 +12,10 @@ from core.logger import get_logger
 
 logger = get_logger("cve.translator")
 
-# ─── Prompt de Tradução CVE (usado no fallback Groq) ─────────────────
+# ─── Prompts de IA ──────────────────────────────────────────────────
 
 _CVE_TRANSLATION_SYSTEM_PROMPT = (
-  "You are a senior CVE analyst at NIST with deep expertise in vulnerability disclosure.\n"
+    "You are a senior CVE analyst at NIST with deep expertise in vulnerability disclosure.\n"
     "Your sole task is to translate CVE descriptions from English to Brazilian Portuguese "
     "with flawless technical accuracy.\n\n"
     "Rules:\n"
@@ -28,81 +28,71 @@ _CVE_TRANSLATION_SYSTEM_PROMPT = (
     "5. Return only the translated text. No introductory or closing sentences."
 )
 
-
-def _translate_deepl(text: str) -> str | None:
-    """Traduz texto usando DeepL API."""
-    if not config.DEEPL_API_KEY:
-        return None
-
-    try:
-        response = http_client.post(
-            config.DEEPL_BASE_URL,
-            headers={"Authorization": f"DeepL-Auth-Key {config.DEEPL_API_KEY}"},
-            data={
-                "text": text,
-                "source_lang": "EN",
-                "target_lang": "PT-BR",
-            },
-        )
-        if response.status_code == 200:
-            translations = response.json().get("translations", [])
-            if translations:
-                return translations[0].get("text", "")
-        else:
-            logger.warning("DeepL retornou HTTP %d", response.status_code)
-    except Exception as exc:
-        logger.warning("Falha DeepL: %s", exc)
-    return None
-
-
-def _translate_groq(text: str) -> str | None:
-    """Tradução técnica rigorosa via Groq (Llama-3.1). Fallback do DeepL."""
-    try:
-        messages = [
-            {"role": "system", "content": _CVE_TRANSLATION_SYSTEM_PROMPT},
-            {"role": "user", "content": text},
-        ]
-        return chat_completion(messages, temperature=0.0)
-    except Exception as exc:
-        logger.warning("Falha Groq LLM na tradução de CVE: %s", exc)
-    return None
-
-
-def translate_text(text: str) -> str:
-    """Traduz texto para pt-BR. DeepL (primário) → Groq (fallback) → original."""
-    if not text or not text.strip():
-        return text
-
-    # 1. Tentar DeepL (Primário)
-    logger.debug("Tentando tradução via DeepL...")
-    result = _translate_deepl(text)
-    if result:
-        return result
-
-    # 2. Tentar Groq como Fallback (Llama 3.1)
-    logger.debug("DeepL falhou, usando Groq como fallback...")
-    result = _translate_groq(text)
-    if result:
-        return result
-
-    logger.warning("Tradução falhou — retornando texto original")
-    return text
-
-
-def translate_cve(cve: dict[str, Any]) -> dict[str, Any]:
-    """
-    Traduz campos textuais de uma CVE para pt-BR.
-    Traduz: description (título/descrição combinados).
-    Marca cve['translated'] = True ao final.
+_CVE_HEADLINE_SYSTEM_PROMPT = (
+    "You are a cybersecurity specialist tasked with creating alert headlines.\n"
+    "Given a CVE description, generate a one-line concise and catchy headline in Brazilian Portuguese.\n"
+    "The headline should summarize the impact (e.g., 'O [Produto] está vulnerável à falha [Tipo] devido a [Causa]').\n"
+    "Rules:\n"
     """
     cve_id = cve.get("cve_id", "")
     description = cve.get("description", "")
+    product = cve.get("product", "N/A")
 
-    if description:
-        cve["description_pt"] = translate_text(description)
-        logger.info("CVE %s — descrição traduzida", cve_id)
-    else:
+    if not description:
         cve["description_pt"] = ""
+        cve["headline_pt"] = f"Alerta de Segurança para {cve_id}"
+        cve["translated"] = True
+        return cve
+
+    # 1. Tentar DeepL para Tradução (Mais rápido se funcionar)
+    translated_desc = _translate_deepl(description)
+
+    if translated_desc:
+        # Se DeepL funcionou, só precisamos da Headline via Groq
+        cve["description_pt"] = translated_desc
+        cve["headline_pt"] = _generate_headline(description) or f"Alerta de Segurança para {cve_id}"
+    else:
+        # 2. SE DEEPL FALHAR (403 detectado): Fazer TUDO em uma única chamada Groq
+        logger.info("DeepL indisponível. Usando Inteligência Consolidada Groq para CVE %s...", cve_id)
+        
+        system_prompt = (
+            "You are a Senior CVE Analyst. Process the vulnerability description.\n"
+            "Return a JSON object with: 'description_pt' (technical translation) and 'headline_pt' (concise technical alert headline).\n"
+            "Rules:\n"
+            "- Headline: Professional, max 100 chars, e.g., 'O [Produto] está vulnerável...'\n"
+            "- Description: Technical, formal, Brazilian Portuguese.\n"
+            "Return ONLY JSON."
+        )
+        
+        user_prompt = f"CVE ID: {cve_id}\nProduct: {product}\nDescription: {description}"
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+        
+        import json
+        import re
+
+        response = chat_completion(messages, temperature=0.1, json_mode=True)
+        
+        if response:
+            try:
+                # Extração via regex caso haja meta-texto
+                json_match = re.search(r'(\{.*\})', response, re.DOTALL)
+                clean_response = json_match.group(1) if json_match else response
+                data = json.loads(clean_response)
+                
+                cve["description_pt"] = data.get("description_pt", description)
+                cve["headline_pt"] = data.get("headline_pt", f"Alerta de Segurança para {cve_id}")
+                logger.info("CVE %s — Inteligência consolidada concluída", cve_id)
+            except Exception as exc:
+                logger.error("Falha ao parsear inteligência da CVE %s: %s", cve_id, exc)
+                cve["description_pt"] = description
+                cve["headline_pt"] = f"Alerta de Segurança para {cve_id}"
+        else:
+            cve["description_pt"] = description
+            cve["headline_pt"] = f"Alerta de Segurança para {cve_id}"
 
     cve["translated"] = True
     return cve

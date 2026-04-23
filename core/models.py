@@ -16,6 +16,8 @@ class StandardCVEAlert:
     impacted_clients: list[str] = field(default_factory=list)
     epss_score: float | None = None
     in_cisa_kev: bool = False
+    has_exploit_db: bool = False
+    headline: str = ""
     raw_payload: dict[str, Any] = field(default_factory=dict)
 
 

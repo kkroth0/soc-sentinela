@@ -11,10 +11,9 @@ from core.logger import get_logger
 logger = get_logger("core.clients.groq_client")
 
 
-def chat_completion(messages: list[dict[str, str]], temperature: float = 0.0) -> str | None:
+def chat_completion(messages: list[dict[str, str]], temperature: float = 0.0, json_mode: bool = False) -> str | None:
     """
     Realiza uma chamada de chat completion para a Groq.
-    Este é o ÚNICO ponto de contato com a API Groq no projeto.
     """
     if not config.GROQ_API_KEY:
         logger.error("GROQ_API_KEY não configurada")
@@ -30,6 +29,8 @@ def chat_completion(messages: list[dict[str, str]], temperature: float = 0.0) ->
         "messages": messages,
         "temperature": temperature,
     }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
 
     try:
         response = http_client.post(url, headers=headers, json=payload)

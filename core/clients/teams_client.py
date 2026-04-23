@@ -34,8 +34,8 @@ def send_card(card_payload: dict[str, Any]) -> bool:
 
     try:
         response = http_client.post(config.TEAMS_WEBHOOK_URL, json=envelope)
-        if response.status_code == 200:
-            logger.info("Card enviado ao Teams com sucesso")
+        if response.status_code in (200, 202):
+            logger.info("Card enviado ao Teams com sucesso (HTTP %d)", response.status_code)
             return True
 
         logger.error(

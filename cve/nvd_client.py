@@ -142,6 +142,7 @@ def _parse_cve(cve_data: dict[str, Any]) -> dict[str, Any] | None:
         "date": cve_data.get("published", ""),
         "epss_score": None,
         "in_cisa_kev": False,
+        "has_exploit_db": any("exploit-db.com" in ref.get("url", "").lower() for ref in cve_data.get("references", [])),
         "risk_tag": None,
         "impacted_clients": [],
         "translated": False,

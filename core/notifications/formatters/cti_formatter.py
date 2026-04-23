@@ -19,48 +19,101 @@ _LAYER_LABELS: dict[int, str] = {
 
 
 def build_news_card(article: dict[str, Any]) -> dict[str, Any]:
-    """Monta Adaptive Card para um artigo de notícia CTI."""
+    """Monta Adaptive Card para um artigo de notícia CTI com design Premium."""
     title = article.get("title_pt") or article.get("title", "Sem título")
     summary = article.get("summary_pt") or article.get("summary", "")
     source = article.get("source", "Desconhecido")
     layer = article.get("layer", 3)
     url = article.get("url", "")
     date = article.get("date", "")
+    clients = article.get("impacted_clients", [])
 
     layer_label = _LAYER_LABELS.get(layer, "📰 Notícia")
 
     body: list[dict] = [
+        # 1. Header Banner
         {
-            "type": "TextBlock",
-            "text": f"{layer_label}",
-            "weight": "Bolder",
-            "size": "Small",
-            "color": "accent",
+            "type": "Container",
+            "style": "accent",
+            "bleed": True,
+            "items": [
+                {
+                    "type": "TextBlock",
+                    "text": f"🚨 CTI Report - {title}",
+                    "weight": "Bolder",
+                    "size": "Medium",
+                    "wrap": True,
+                    "color": "Light"
+                },
+                {
+                    "type": "TextBlock",
+                    "text": layer_label,
+                    "size": "Small",
+                    "isSubtle": True,
+                    "spacing": "None",
+                    "color": "Light"
+                }
+            ]
         },
-        {
-            "type": "TextBlock",
-            "text": title,
-            "weight": "Bolder",
-            "size": "Medium",
-            "wrap": True,
-        },
+        # 2. Source Info
         {
             "type": "FactSet",
             "facts": [
                 {"title": "Fonte", "value": source},
                 {"title": "Data", "value": date[:10] if date else "N/A"},
             ],
-        },
+            "spacing": "Medium"
+        }
     ]
 
-    if summary:
+    # 3. Impacted Clients (Targeting)
+    if clients:
         body.append({
-            "type": "TextBlock",
-            "text": summary[:400],
-            "wrap": True,
+            "type": "Container",
+            "style": "attention",
             "spacing": "Medium",
+            "items": [{
+                "type": "TextBlock",
+                "text": f"🎯 **Ativos Correspondentes:** {' | '.join(clients)}",
+                "weight": "Bolder",
+                "wrap": True,
+                "size": "Small"
+            }]
         })
 
+    # 4. Summary
+    if summary:
+        text = summary[:800]
+        if url:
+            text += f"\n\n**Fonte:** [{url}]({url})"
+            
+        body.extend([
+            {
+                "type": "TextBlock",
+                "text": "Resumo Profissional",
+                "weight": "Bolder",
+                "spacing": "Medium",
+                "size": "Small",
+                "separator": True
+            },
+            {
+                "type": "TextBlock",
+                "text": text,
+                "wrap": True,
+                "spacing": "Small",
+                "size": "Small",
+                "isSubtle": True
+            }
+        ])
+
+    card: dict[str, Any] = {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.4",
+        "body": body,
+        "msteams": {"width": "Full"}
+    }
+    
     actions: list[dict] = []
     if url:
         actions.append({
@@ -68,13 +121,6 @@ def build_news_card(article: dict[str, Any]) -> dict[str, Any]:
             "title": "Ler artigo completo",
             "url": url,
         })
-
-    card: dict[str, Any] = {
-        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-        "type": "AdaptiveCard",
-        "version": "1.4",
-        "body": body,
-    }
     if actions:
         card["actions"] = actions
 

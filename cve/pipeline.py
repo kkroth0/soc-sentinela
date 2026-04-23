@@ -105,6 +105,8 @@ def _process_single_cve(
             impacted_clients=cve.get("impacted_clients", []),
             epss_score=cve.get("epss_score"),
             in_cisa_kev=cve.get("in_cisa_kev", False),
+            has_exploit_db=cve.get("has_exploit_db", False),
+            headline=cve.get("headline_pt", ""),
             raw_payload=cve
         )
 
