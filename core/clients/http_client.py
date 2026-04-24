@@ -30,6 +30,10 @@ def get_session() -> requests.Session:
         return _session
 
     _session = requests.Session()
+    _session.headers.update({
+        "User-Agent": "SOC-Sentinel/1.0 (Threat Intelligence Bot; SOC Team)",
+        "Accept": "application/json, text/plain, */*"
+    })
 
     retry_strategy = Retry(
         total=_MAX_RETRIES,
@@ -47,7 +51,7 @@ def get_session() -> requests.Session:
     _session.mount("https://", adapter)
     _session.mount("http://", adapter)
 
-    logger.info("Sessão HTTP inicializada com retry=%d, pool=%d", _MAX_RETRIES, _POOL_CONNECTIONS)
+    logger.info("Sessão HTTP v7.0: pool=%d, agent=SOC-Sentinel", _POOL_CONNECTIONS)
     return _session
 
 
@@ -78,6 +82,11 @@ def request_with_retry_after(
                 wait_seconds = 30
         else:
             wait_seconds = min(30, 2 ** attempt)
+        
+        # Limite de segurança: não esperar mais que 2 minutos para não travar threads do scheduler
+        if wait_seconds > 120:
+            logger.error("Retry-After muito longo (%ds) para %s — abortando requisição.", wait_seconds, url)
+            return response
 
         logger.warning(
             "429 Too Many Requests em %s — aguardando %ds (tentativa %d/%d)",
@@ -97,3 +106,12 @@ def get(url: str, **kwargs: Any) -> requests.Response:
 def post(url: str, **kwargs: Any) -> requests.Response:
     """POST com suporte a Retry-After."""
     return request_with_retry_after("POST", url, **kwargs)
+
+
+def close_session() -> None:
+    """Encerra a sessão HTTP singleton."""
+    global _session
+    if _session:
+        _session.close()
+        _session = None
+        logger.info("Sessão HTTP encerrada com sucesso.")

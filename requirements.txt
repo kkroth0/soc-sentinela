@@ -15,8 +15,8 @@ feedparser>=6.0.0
 # Excel / Assets
 openpyxl>=3.1.0
 
-# Tradução (fallback quando DeepL não disponível)
-googletrans==4.0.0-rc.1
+# IA / Inteligência (Groq Llama-3)
+groq>=0.5.0
 
 # Microsoft Graph API (Autenticação)
 msal>=1.28.0

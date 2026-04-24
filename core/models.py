@@ -30,3 +30,4 @@ class StandardCTINews:
     layer: int
     summary: str
     date: str
+    matched_assets: list[str] = field(default_factory=list)

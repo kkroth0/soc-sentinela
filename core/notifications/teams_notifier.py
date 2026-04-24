@@ -24,28 +24,23 @@ class TeamsNotifier(BaseNotifier):
         return "Microsoft Teams"
 
     def send_cve_alert(self, alert: StandardCVEAlert) -> bool:
-        if not config.TEAMS_WEBHOOK_URL:
-            return False
-            
-        cve_dict = asdict(alert)
-        card_payload = build_cve_card(cve_dict)
-        return send_card(card_payload)
+        card_payload = build_cve_card(alert)
+        # Tenta canal específico, senão fallback para o global
+        webhook = config.TEAMS_WEBHOOK_CVE or config.TEAMS_WEBHOOK_URL
+        return send_card(card_payload, webhook_url=webhook)
 
     def send_cti_news(self, news: StandardCTINews) -> bool:
-        if not config.TEAMS_WEBHOOK_URL:
-            return False
-            
-        news_dict = asdict(news)
-        card_payload = build_news_card(news_dict)
-        return send_card(card_payload)
+        card_payload = build_news_card(news)
+        # Tenta canal específico, senão fallback para o global
+        webhook = config.TEAMS_WEBHOOK_CTI or config.TEAMS_WEBHOOK_URL
+        return send_card(card_payload, webhook_url=webhook)
 
     def send_report(self, stats: dict[str, Any], report_type: str) -> bool:
-        if not config.TEAMS_WEBHOOK_URL:
-            return False
-
         if report_type == "weekly":
             card = build_weekly_report_card(stats)
         else:
             card = build_monthly_report_card(stats)
 
-        return send_card(card)
+        # Relatórios vão para o canal global (ou CTI se global não existir)
+        webhook = config.TEAMS_WEBHOOK_URL or config.TEAMS_WEBHOOK_CTI
+        return send_card(card, webhook_url=webhook)

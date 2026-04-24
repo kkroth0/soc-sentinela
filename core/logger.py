@@ -6,6 +6,7 @@ Todos os módulos importam daqui. Nunca usar print() ou logging.getLogger() dire
 import logging
 import os
 import sys
+import config
 
 _LOG_FORMAT = "[%(asctime)s] %(levelname)s %(name)s — %(message)s"
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -18,8 +19,7 @@ def _setup_root_logger() -> None:
     if _INITIALIZED:
         return
 
-    log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
-    log_level = getattr(logging, log_level_name, logging.INFO)
+    log_level = getattr(logging, config.LOG_LEVEL, logging.INFO)
 
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)

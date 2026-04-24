@@ -3,16 +3,15 @@ cti/rss_client.py — Ingestão de artigos de segurança via feeds RSS.
 Feeds organizados em camadas temáticas.
 """
 
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import config  # type: ignore
-import requests
 import re
+import requests
 import feedparser  # type: ignore
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import config
 from core.logger import get_logger  # type: ignore
 from core.clients import http_client  # type: ignore
 
@@ -104,7 +103,7 @@ def _parse_feed(
             "Connection": "keep-alive",
             "Upgrade-Insecure-Requests": "1"
         }
-        resp = requests.get(
+        resp = http_client.get(
             url, 
             timeout=8, 
             headers=headers
@@ -140,10 +139,11 @@ def _parse_entry(
     cutoff: datetime,
 ) -> dict[str, Any] | None:
     """Normaliza uma entrada RSS em estrutura interna."""
-    # Data de publicação
+    # Data de publicação (Parse resiliente via time.mktime)
+    import time
     published = entry.get("published_parsed") or entry.get("updated_parsed")
     if published:
-        pub_date = datetime(published[0], published[1], published[2], published[3], published[4], published[5], tzinfo=timezone.utc)
+        pub_date = datetime.fromtimestamp(time.mktime(published), tz=timezone.utc)
         if pub_date < cutoff:
             return None
     else:
@@ -156,35 +156,35 @@ def _parse_entry(
     if not title or not link:
         return None
 
-    # Limpar HTML do summary
-    if "<" in summary:
-        summary = re.sub(r"<[^>]+>", "", summary).strip()
+    # Normalização de URL: Remove parâmetros de tracking para evitar duplicidade
+    link = re.sub(r'[\?&](utm_[^&]+|feature=[^&]+|fbclid=[^&]+)', '', link)
+    link = link.rstrip('?') # Limpa interrogação órfã no final
 
-    # Fallback Ativo: Se o Feed vier oco (Sem summary), raspa o site original!
-    if not summary:
+    # Limpar HTML e Unescape de entidades (Performance)
+    import html
+    if summary and "<" in summary:
+        summary = re.sub(r"<[^>]+>", "", summary)
+    summary = html.unescape(summary or "").strip()
+
+    # Fallback Crawler Otimizado: Se o RSS vier vazio, pega a meta description
+    if not summary and link:
         try:
-            logger.debug("RSS Oco detectado em %s. Raspando site...", source)
-            resp = http_client.get(link, timeout=4)
-            if resp.status_code == 200:
-                html_doc = resp.text
-                
-                # Tenta pegar a tag og:description do Facebook ou a meta description nativa
-                match = re.search(r'<meta[^>]*?(?:name|property)=["\'](?:og:description|description)["\'][^>]*?content=["\']([^"\']+)["\']', html_doc, re.IGNORECASE)
-                if match:
-                    summary = match.group(1).strip()
-                    logger.debug("Resumo raspado com sucesso via Fallback Crawler!")
-                else:
-                    # Alternativa bizarra: Pega o primeiro parágrafo longo do HTML
-                    p_match = re.search(r'<p[^>]*>([^<]{100,500})</p>', html_doc, re.IGNORECASE)
-                    if p_match:
-                        summary = p_match.group(1).strip()
-        except Exception as fallback_exc:
-            logger.debug("Scraper de fallback falhou p/ %s: %s", source, fallback_exc)
+            # Baixa apenas os primeiros 10KB (onde ficam as meta tags) para economizar banda
+            with http_client.get_session().get(link, timeout=3, stream=True) as resp:
+                if resp.status_code == 200:
+                    chunk = resp.raw.read(10240).decode('utf-8', errors='ignore')
+                    m = re.search(r'<meta[^>]*?content=["\']([^"\']+)["\'][^>]*?name=["\']description["\']', chunk, re.I)
+                    if not m:
+                         m = re.search(r'<meta[^>]*?name=["\']description["\']?.*?content=["\']([^"\']+)["\']', chunk, re.I)
+                    if m:
+                        summary = html.unescape(m.group(1)).strip()
+        except Exception:
+            pass
 
     return {
         "title": title,
         "url": link,
-        "summary": str(summary)[:500],  # type: ignore
+        "summary": summary[:500],
         "source": source,
         "layer": layer,
         "date": pub_date.isoformat(),

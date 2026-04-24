@@ -14,12 +14,13 @@ BASE_DIR: str = os.path.dirname(os.path.abspath(__file__))
 
 # ─── APIs ─────────────────────────────────────────────────────────────
 NVD_API_KEY: str = os.getenv("NVD_API_KEY", "")
-DEEPL_API_KEY: str = os.getenv("DEEPL_API_KEY", "")
 GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 
 
 # ─── Microsoft Teams ──────────────────────────────────────────────────
 TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
+TEAMS_WEBHOOK_CVE: str = os.getenv("TEAMS_WEBHOOK_CVE", "")
+TEAMS_WEBHOOK_CTI: str = os.getenv("TEAMS_WEBHOOK_CTI", "")
 TEAMS_WEBHOOK_SECRET: str = os.getenv("TEAMS_WEBHOOK_SECRET", "")
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
@@ -51,6 +52,9 @@ BOT_DB_PATH: str = os.path.abspath(
 ASSETS_CACHE_PATH: str = os.path.abspath(
     os.getenv("ASSETS_CACHE_PATH", os.path.join(BASE_DIR, "data", "clients_assets.xlsx"))
 )
+VENDOR_ALIASES_PATH: str = os.path.abspath(
+    os.path.join(BASE_DIR, "data", "vendor_aliases.json")
+)
 
 # ─── Servidor de comandos ────────────────────────────────────────────
 COMMAND_PORT: int = int(os.getenv("COMMAND_PORT", "8765"))
@@ -61,11 +65,32 @@ EPSS_BASE_URL: str = "https://api.first.org/data/v1/epss"
 CISA_KEV_URL: str = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 
 # Detecta se é API Free (:fx no final) ou Pro para setar a URL correta
-DEEPL_BASE_URL: str = (
-    "https://api-free.deepl.com/v2/translate"
-    if DEEPL_API_KEY.endswith(":fx")
-    else "https://api.deepl.com/v2/translate"
-)
 GRAPH_BASE_URL: str = "https://graph.microsoft.com/v1.0"
 GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
 GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
+
+
+def validate_config() -> None:
+    """Valida se as configurações críticas estão presentes."""
+    # Precisamos da GROQ para inteligência
+    if not GROQ_API_KEY:
+        raise ValueError("ERRO CRÍTICO: GROQ_API_KEY ausente no .env")
+
+    # Precisamos de pelo menos UM webhook do Teams para alertas
+    has_teams = any([TEAMS_WEBHOOK_URL, TEAMS_WEBHOOK_CVE, TEAMS_WEBHOOK_CTI])
+    if not has_teams:
+        raise ValueError("ERRO CRÍTICO: Nenhum Webhook do Teams configurado (TEAMS_WEBHOOK_URL, _CVE ou _CTI)")
+    
+    if not TEAMS_WEBHOOK_SECRET:
+        from core.logger import get_logger
+        get_logger("config").warning("⚠️ TEAMS_WEBHOOK_SECRET não configurado. Servidor de comandos operando em MODO INSEGURO.")
+    
+    # Validar formato básico das URLs
+    for url_name, url in [("Global", TEAMS_WEBHOOK_URL), ("CVE", TEAMS_WEBHOOK_CVE), ("CTI", TEAMS_WEBHOOK_CTI)]:
+        if url and not url.startswith("https://"):
+            raise ValueError(f"ERRO CRÍTICO: TEAMS_WEBHOOK_{url_name} deve começar com https://")
+
+    # Garante que os diretórios de dados existam
+    os.makedirs(os.path.dirname(BOT_DB_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(ASSETS_CACHE_PATH), exist_ok=True)

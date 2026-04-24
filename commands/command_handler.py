@@ -35,13 +35,23 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
         """Processa requisições POST dos comandos."""
         path = self.path.rstrip("/")
 
-        # Validação de secret (se configurado) previne Timing Attacks via hmac
+        # 1. Autenticação (Opcional conforme solicitado, mas validada se houver Secret)
         if config.TEAMS_WEBHOOK_SECRET:
             auth = self.headers.get("Authorization", "")
             expected_auth = f"Bearer {config.TEAMS_WEBHOOK_SECRET}"
             if not hmac.compare_digest(auth, expected_auth):
+                logger.warning("Tentativa de acesso não autorizado (Token inválido): %s", self.address_string())
                 self._respond(401, {"error": "Unauthorized"})
                 return
+        else:
+            # Log de auditoria para modo inseguro
+            logger.debug("Comando recebido em modo INSEGURO (sem Secret): %s", path)
+
+        # 2. Limite de segurança p/ Payload (DoS prevention)
+        length = int(self.headers.get("Content-Length", 0))
+        if length > 1 * 1024 * 1024:  # Max 1MB
+            self._respond(413, {"error": "Payload too large"})
+            return
 
         handlers = {
             "/ListeCVEs": self._handle_list_cves,

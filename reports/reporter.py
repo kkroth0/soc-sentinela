@@ -14,70 +14,62 @@ from typing import Any
 from core import storage
 from core.notifications import global_dispatcher
 from core.logger import get_logger
+from core.utils.dates import parse_iso, format_brazilian
 
 logger = get_logger("reports.reporter")
 
 
 # ─── Cálculo de períodos ──────────────────────────────────────────────
 
-def _get_week_range() -> tuple[str, str, str]:
-    """Retorna (period_key, start_iso, end_iso) da semana anterior."""
+def _get_date_range(period_type: str, offset: int = 0) -> tuple[str, str, str]:
+    """
+    Retorna (period_key, start_iso, end_iso) para um período e offset.
+    period_type: 'weekly' ou 'monthly'
+    offset: 0 (atual/anterior imediato), 1 (um antes desse), etc.
+    """
     now = datetime.now(timezone.utc)
-    last_monday = now - timedelta(days=now.weekday() + 7)
-    last_sunday = last_monday + timedelta(days=6, hours=23, minutes=59, seconds=59)
+    
+    if period_type == "weekly":
+        # Início desta semana (segunda-feira 00:00)
+        this_monday = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=now.weekday())
+        start_dt = this_monday - timedelta(days=7 * (offset + 1))
+        end_dt = start_dt + timedelta(days=7)
+        
+        year, week, _ = start_dt.isocalendar()
+        period_key = f"{year}-W{week:02d}"
+        
+    else: # monthly
+        # Primeiro dia deste mês
+        this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        
+        # Retroceder offset + 1 meses
+        start_dt = this_month
+        for _ in range(offset + 1):
+            if start_dt.month == 1:
+                start_dt = start_dt.replace(year=start_dt.year - 1, month=12)
+            else:
+                start_dt = start_dt.replace(month=start_dt.month - 1)
+        
+        # Fim do período é o início do próximo mês
+        if start_dt.month == 12:
+            end_dt = start_dt.replace(year=start_dt.year + 1, month=1)
+        else:
+            end_dt = start_dt.replace(month=start_dt.month + 1)
+            
+        period_key = start_dt.strftime("%Y-%m")
 
-    year, week, _ = last_monday.isocalendar()
-    period_key = f"{year}-W{week:02d}"
-
-    return period_key, last_monday.isoformat(), last_sunday.isoformat()
-
-
-def _get_previous_week_range() -> tuple[str, str, str]:
-    """Retorna (period_key, start_iso, end_iso) de DUAS semanas atrás (para tendência)."""
-    now = datetime.now(timezone.utc)
-    prev_monday = now - timedelta(days=now.weekday() + 14)
-    prev_sunday = prev_monday + timedelta(days=6, hours=23, minutes=59, seconds=59)
-
-    year, week, _ = prev_monday.isocalendar()
-    period_key = f"{year}-W{week:02d}"
-
-    return period_key, prev_monday.isoformat(), prev_sunday.isoformat()
-
-
-def _get_month_range() -> tuple[str, str, str]:
-    """Retorna (period_key, start_iso, end_iso) do mês ANTERIOR."""
-    now = datetime.now(timezone.utc)
-    first_of_current = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    last_of_previous = first_of_current - timedelta(seconds=1)
-    first_of_previous = last_of_previous.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-    period_key = first_of_previous.strftime("%Y-%m")
-    return period_key, first_of_previous.isoformat(), last_of_previous.isoformat()
-
-
-def _get_previous_month_range() -> tuple[str, str, str]:
-    """Retorna (period_key, start_iso, end_iso) de DOIS meses atrás (para tendência)."""
-    now = datetime.now(timezone.utc)
-    first_of_current = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    last_of_previous = first_of_current - timedelta(seconds=1)
-    first_of_previous = last_of_previous.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    last_of_two_ago = first_of_previous - timedelta(seconds=1)
-    first_of_two_ago = last_of_two_ago.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-    period_key = first_of_two_ago.strftime("%Y-%m")
-    return period_key, first_of_two_ago.isoformat(), last_of_two_ago.isoformat()
+    return period_key, start_dt.isoformat(), end_dt.isoformat()
 
 
 # ─── Agregação de dados ──────────────────────────────────────────────
 
 def _build_period_label(start_iso: str, end_iso: str) -> str:
     """Formata o intervalo como '14/04 — 20/04/2026'."""
-    try:
-        start_dt = datetime.fromisoformat(start_iso)
-        end_dt = datetime.fromisoformat(end_iso)
-        return f"{start_dt.strftime('%d/%m')} — {end_dt.strftime('%d/%m/%Y')}"
-    except Exception:
-        return ""
+    start_dt = parse_iso(start_iso)
+    end_dt = parse_iso(end_iso)
+    if not start_dt or not end_dt: return ""
+    
+    return f"{start_dt.strftime('%d/%m')} — {end_dt.strftime('%d/%m/%Y')}"
 
 
 def _calc_trend(current: int, previous: int) -> str:
@@ -93,30 +85,19 @@ def _calc_trend(current: int, previous: int) -> str:
 
 
 def _aggregate_full_stats(since: str, until: str) -> dict[str, Any]:
-    """Monta o objeto completo de estatísticas para um período."""
-    risk_breakdown = storage.get_cve_stats(since, until)
-    cve_count = sum(risk_breakdown.values())
-    news_count = storage.get_news_count(since, until)
-    avg_cvss = storage.get_avg_cvss(since, until)
-    top_vendors = storage.get_cves_by_vendor(since, until)
-    top_products = storage.get_cves_by_product(since, until)
-    top_clients = storage.get_most_impacted_clients(since, until)
-    top_news_sources = storage.get_news_by_source(since, until)
-
+    """Coleta todas as estatísticas do período em uma única chamada ao storage (Performance)."""
+    data = storage.get_report_stats(since, until)
+    
+    # Mapeia os dados brutos do banco para a estrutura esperada pelo formatador
     return {
-        "cve_count": cve_count,
-        "news_count": news_count,
-        "avg_cvss": avg_cvss,
-        "risk_breakdown": {
-            "CRITICAL": risk_breakdown.get("CRITICAL", 0),
-            "HIGH": risk_breakdown.get("HIGH", 0),
-            "MEDIUM": risk_breakdown.get("MEDIUM", 0),
-            "LOW": risk_breakdown.get("LOW", 0),
-        },
-        "top_vendors": top_vendors,
-        "top_products": top_products,
-        "top_clients": top_clients,
-        "top_news_sources": top_news_sources,
+        "cve_count": data["total_cves"],
+        "news_count": data["total_news"],
+        "avg_cvss": data["avg_cvss"],
+        "risk_breakdown": data["risk_distribution"],
+        "top_vendors": data["top_vendors"],
+        "top_products": data["top_products"],
+        "top_clients": data["top_clients"],
+        "top_news_sources": data["top_sources"],
     }
 
 
@@ -136,8 +117,8 @@ def run_weekly_report() -> bool:
     logger.info("═══ Relatório Semanal iniciado ═══")
 
     try:
-        period_key, start, end = _get_week_range()
-        _, prev_start, prev_end = _get_previous_week_range()
+        period_key, start, end = _get_date_range("weekly", offset=0)
+        _, prev_start, prev_end = _get_date_range("weekly", offset=1)
 
         stats = _aggregate_full_stats(start, end)
         prev_stats = _aggregate_full_stats(prev_start, prev_end)
@@ -175,8 +156,8 @@ def run_monthly_report() -> bool:
     logger.info("═══ Relatório Mensal iniciado ═══")
 
     try:
-        period_key, start, end = _get_month_range()
-        _, prev_start, prev_end = _get_previous_month_range()
+        period_key, start, end = _get_date_range("monthly", offset=0)
+        _, prev_start, prev_end = _get_date_range("monthly", offset=1)
 
         stats = _aggregate_full_stats(start, end)
         prev_stats = _aggregate_full_stats(prev_start, prev_end)
