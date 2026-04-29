@@ -185,8 +185,35 @@ def create_sample_spreadsheet():
     
     # Dados de exemplo Blacklist
     blacklist_data = [
-        ["Adobe", "Flash Player", "flash", "EOL - Descontinuado"],
-        ["Microsoft", "Internet Explorer", "ie11", "Descontinuado e sem suporte"]
+        ["Adobe",               "Flash Player",                    "flash",                                        "Vendor bloqueado"],
+        ["Microsoft",           "Internet Explorer",               "ie11",                                         "Vendor bloqueado"], 
+        ["Mansurahamed",        "WP Plugins (various)",            "mansurahamed",                                 "Vendor bloqueado"],
+        ["Lubus",               "Swift Framework / Themes",        "lubus, swift-framework",                       "Vendor bloqueado"],
+        ["Scottpaterson",       "WP Plugins (various)",            "scottpaterson",                                "Vendor bloqueado"],
+        ["Tareqhasan / weDevs", "WP Project Manager, WooCommerce Extensions", "tareqhasan, wedevs",               "Vendor bloqueado"],
+        ["Micahblu",            "WP Plugins (various)",            "micahblu",                                     "Vendor bloqueado"],
+        ["Buynowdepot",         "Buy Now Plus",                    "buynowdepot, buy-now-plus",                    "Vendor bloqueado"],
+        ["Widgilabs",           "WP Plugins (various)",            "widgilabs",                                    "Vendor bloqueado"],
+        ["Webandprint",         "WP Plugins (various)",            "webandprint",                                  "Vendor bloqueado"],
+        ["Litespeedtech",       "LiteSpeed Cache for WordPress",   "litespeed, litespeed-cache, lscwp",            "Vendor bloqueado"],
+        ["Hmplugin",            "Happy Addons for Elementor",      "hmplugin, happy-addons, happyaddons",          "Vendor bloqueado"],
+        ["Mondula",             "Multi Step Form",                 "mondula, multi-step-form",                     "Vendor bloqueado"],
+        ["Greenshiftwp",        "Greenshift Blocks & Page Builder","greenshiftwp, greenshift",                     "Vendor bloqueado"],
+        ["Progress Planner",    "Progress Planner",                "progress-planner",                             "Vendor bloqueado"],
+        ["Wpmudev",             "Smush, Hummingbird, Hustle, Defender", "wpmudev, smush, hummingbird, hustle, defender", "Vendor bloqueado"],
+        ["Zaytech",             "Smart Online Order for Clover",   "zaytech, smart-online-order",                  "Vendor bloqueado"],
+        ["Renzojohnson",        "WP Plugins (various)",            "renzojohnson",                                 "Vendor bloqueado"],
+        ["Sunshinephotocart",   "Sunshine Photo Cart",             "sunshinephotocart, sunshine-photo-cart",       "Vendor bloqueado"],
+        ["Wpmanageninja",       "FluentForms, FluentCRM, FluentBooking", "wpmanageninja, fluentforms, fluentcrm, fluentbooking", "Vendor bloqueado"],
+        ["Templately",          "Templately Template Library",     "templately",                                   "Vendor bloqueado"],
+        ["Kraftplugins",        "Mega Elements for Elementor",     "kraftplugins, mega-elements",                  "Vendor bloqueado"],
+        ["Androidbubbles",      "WP Plugins (various)",            "androidbubbles",                               "Vendor bloqueado"],
+        ["Code-Atlantic",       "Popup Maker, User Switching",     "code-atlantic, popup-maker, user-switching",   "Vendor bloqueado"],
+        ["Depicter",            "Depicter Slider & Popup",         "depicter",                                     "Vendor bloqueado"],
+        ["Ninjateam",           "WP Plugins (various)",            "ninjateam",                                    "Vendor bloqueado"],
+        ["Rainbow-Link",        "WP Plugins (various)",            "rainbow-link",                                 "Vendor bloqueado"],
+        ["Wcproducttable",      "WooCommerce Product Table",       "wcproducttable, wc-product-table",             "Vendor bloqueado"],
+        ["Averta",              "Phlox Theme, Master Slider",      "averta, phlox, master-slider",                 "Vendor bloqueado"]
     ]
     
     for row in blacklist_data:

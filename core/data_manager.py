@@ -9,6 +9,7 @@ import threading
 from typing import Any
 
 import openpyxl
+import time
 
 import config
 from core.logger import get_logger
@@ -47,23 +48,28 @@ def _load_excel(filepath: str) -> tuple[dict[str, dict[str, Any]], list[dict[str
         except StopIteration:
             headers = []
             
+        if not all(h in headers for h in ["client", "vendor", "product"]):
+            logger.warning("Cabeçalhos críticos ausentes no Excel (esperado: client, vendor, product). Usando índices padrão (0, 1, 2).")
+
         c_idx = headers.index("client") if "client" in headers else 0
         v_idx = headers.index("vendor") if "vendor" in headers else 1
         p_idx = headers.index("product") if "product" in headers else 2
         a_idx = headers.index("aliases") if "aliases" in headers else -1
 
+        from core.utils.security import sanitize_csv_value
+        
         for row in rows:
             r = list(row) if row else []
             if len(r) <= max(c_idx, v_idx, p_idx) or not r[c_idx]:
                 continue
                 
-            client = str(r[c_idx]).strip()
-            vendor = str(r[v_idx]).strip().lower() if r[v_idx] else ""
-            product = str(r[p_idx]).strip().lower() if r[p_idx] else ""
-            aliases_str = str(r[a_idx]).strip().lower() if a_idx >= 0 and len(r) > a_idx and r[a_idx] else ""
-            aliases = [a.strip() for a in aliases_str.split(",") if a.strip()]
+            client = sanitize_csv_value(str(r[c_idx]).strip())
+            vendor = sanitize_csv_value(str(r[v_idx]).strip().lower()) if r[v_idx] else ""
+            product = sanitize_csv_value(str(r[p_idx]).strip().lower()) if r[p_idx] else ""
+            raw_aliases = str(r[a_idx]).strip().lower() if a_idx >= 0 and len(r) > a_idx and r[a_idx] else ""
+            aliases = [sanitize_csv_value(a.strip()) for a in raw_aliases.split(",") if a.strip()]
 
-            if vendor and product:
+            if vendor:
                 key = f"{vendor}:{product}"
                 if key not in asset_map:
                     asset_map[key] = {"clients": [], "aliases": aliases}
@@ -116,12 +122,16 @@ def _load_excel(filepath: str) -> tuple[dict[str, dict[str, Any]], list[dict[str
     return asset_map, blacklist
 
 
+_last_check_time = 0.0
+_CHECK_INTERVAL = 5.0 # Segundos
+
 def _refresh_if_needed() -> None:
-    """
-    Recarrega o Excel se o hash do arquivo mudou.
-    Bug fix #4: Invalidação e reconstrução IMEDIATA do mapa em memória.
-    """
-    global _asset_map, _blacklist, _file_hash
+    """Recarrega o Excel se o hash do arquivo mudou (limitado a 1 check a cada 5s)."""
+    global _asset_map, _blacklist, _file_hash, _last_check_time
+
+    now = time.time()
+    if now - _last_check_time < _CHECK_INTERVAL:
+        return
 
     filepath = config.ASSETS_CACHE_PATH
     if not os.path.exists(filepath):
@@ -129,6 +139,8 @@ def _refresh_if_needed() -> None:
         return
 
     current_hash = _compute_file_hash(filepath)
+    _last_check_time = now
+
     if current_hash == _file_hash:
         return
 

@@ -3,75 +3,124 @@ cve/nvd_client.py — Ingestão de CVEs via NVD API 2.0.
 Respeita rate limits (50 req/30s com key, 5 req/30s sem key).
 """
 
+import json
+import re
 import time
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import config
+from core import storage
 from core.clients import http_client
 from core.logger import get_logger
 
 logger = get_logger("cve.nvd_client")
 
-_RESULTS_PER_PAGE: int = 50
-_RATE_LIMIT_DELAY: float = 0.6  # ~50 req/30s com key
+_RESULTS_PER_PAGE: int = 100
+_MAX_RETRIES: int = 3
+_RATE_LIMIT_DELAY: float = 2.0
 
+_nvd_lock = threading.Lock()
+_last_req_time = 0.0
+
+def _rate_limit_wait():
+    """Garante o respeito estrito ao limite de requisições da NVD."""
+    global _last_req_time
+    # 50 req/30s com key (0.6s), 5 req/30s sem key (6.0s)
+    min_interval = 0.65 if config.NVD_API_KEY else 6.5
+    with _nvd_lock:
+        now = time.time()
+        elapsed = now - _last_req_time
+        if elapsed < min_interval:
+            time.sleep(min_interval - elapsed)
+        _last_req_time = time.time()
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def fetch_recent_cves(time_window_minutes: int | None = None) -> list[dict[str, Any]]:
     """
-    Consulta NVD API por CVEs publicadas na janela de tempo configurada.
-    Retorna lista de dicts com dados normalizados de cada CVE.
+    Busca CVEs modificadas recentemente na NVD 2.0 usando download paralelo.
     """
-    # Fixamos para as últimas 48 horas para evitar perdas (fallback robusto),
-    # pois o banco lida perfeitamente com a deduplicação.
-    window = 48 * 60
+    all_cves = []
     now = datetime.now(timezone.utc)
-    start = now - timedelta(minutes=window)
+    
+    # Define a janela de busca: Sempre pelo menos 24 horas
+    window_min = max(config.TIME_WINDOW_MINUTES, 24 * 60)
+    start = now - timedelta(minutes=window_min)
 
-    params: dict[str, Any] = {
-        "pubStartDate": start.strftime("%Y-%m-%dT%H:%M:%S.000"),
-        "pubEndDate": now.strftime("%Y-%m-%dT%H:%M:%S.000"),
+    logger.info("Coleta NVD iniciada (Janela 24h): %s", start.isoformat())
+
+    base_params: dict[str, Any] = {
+        "lastModStartDate": start.strftime("%Y-%m-%dT%H:%M:%S.000"),
+        "lastModEndDate": now.strftime("%Y-%m-%dT%H:%M:%S.000"),
         "resultsPerPage": _RESULTS_PER_PAGE,
-        "startIndex": 0,
     }
+    headers = {"apiKey": config.NVD_API_KEY} if config.NVD_API_KEY else {}
 
-    headers: dict[str, str] = {}
-    if config.NVD_API_KEY:
-        headers["apiKey"] = config.NVD_API_KEY
-
-    all_cves: list[dict[str, Any]] = []
-    total_results = None
-
-    while True:
-        logger.info(
-            "Consultando NVD — startIndex=%d, janela=%d min",
-            params["startIndex"], window,
-        )
-        response = http_client.get(config.NVD_BASE_URL, params=params, headers=headers)
-
+    # 1. Sondagem inicial para obter o total de resultados
+    try:
+        probe_params = base_params.copy()
+        probe_params["resultsPerPage"] = 1 # Mínimo possível para ser rápido
+        response = http_client.get(config.NVD_BASE_URL, params=probe_params, headers=headers)
         if response.status_code != 200:
-            logger.error("NVD API retornou HTTP %d: %s", response.status_code, response.text[:200])
-            break
+            logger.error("NVD Probe Error HTTP %d", response.status_code)
+            return []
+        
+        total_results = response.json().get("totalResults", 0)
+        if total_results == 0:
+            logger.info("NVD: Nenhuma vulnerabilidade encontrada na janela.")
+            return []
+            
+        total_pages = (total_results // _RESULTS_PER_PAGE) + 1
+        logger.info("NVD: %d vulnerabilidades detectadas. Baixando %d páginas em paralelo com controle de banda...", total_results, total_pages)
 
-        data = response.json()
-        total_results = data.get("totalResults", 0)
-        vulnerabilities = data.get("vulnerabilities", [])
+    except Exception as exc:
+        logger.error("Falha na sondagem inicial NVD: %s", exc)
+        return []
 
-        for vuln_wrapper in vulnerabilities:
-            cve_data = vuln_wrapper.get("cve", {})
-            parsed = _parse_cve(cve_data)
-            if parsed:
-                all_cves.append(parsed)
+    # 2. Download paralelo das páginas
+    def fetch_page(page_num: int) -> list[dict[str, Any]]:
+        start_index = page_num * _RESULTS_PER_PAGE
+        params = base_params.copy()
+        params["startIndex"] = start_index
+        
+        # Retry loop robusto para evitar perda de dados
+        for attempt in range(1, _MAX_RETRIES + 1):
+            try:
+                # Retries subsequentes ganham um backoff extra
+                if attempt > 1:
+                    time.sleep(attempt * 2.0)
 
-        logger.info("NVD retornou %d/%d resultados", len(all_cves), total_results)
+                _rate_limit_wait()
+                resp = http_client.get(config.NVD_BASE_URL, params=params, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    vulnerabilities = data.get("vulnerabilities", [])
+                    page_results = []
+                    for v in vulnerabilities:
+                        parsed = _parse_cve(v.get("cve", {}))
+                        if parsed: page_results.append(parsed)
+                    return page_results
+                
+                logger.warning("NVD: Falha na página %d (Tentativa %d/%d - HTTP %d)", 
+                               page_num + 1, attempt, _MAX_RETRIES, resp.status_code)
+            except Exception as e:
+                logger.error("NVD: Erro na página %d (Tentativa %d/%d): %s", 
+                             page_num + 1, attempt, _MAX_RETRIES, e)
+        
+        return []
 
-        # Condição de parada: se já buscamos todos os índices disponíveis
-        if params["startIndex"] + _RESULTS_PER_PAGE >= total_results:
-            break
+    # Executa com 3 workers para ser mais gentil com a API
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(fetch_page, p) for p in range(total_pages)]
+        for future in as_completed(futures):
+            all_cves.extend(future.result())
 
-        params["startIndex"] += _RESULTS_PER_PAGE
-        time.sleep(_RATE_LIMIT_DELAY)
-
+    # Atualiza o estado de sucesso
+    storage.set_state("nvd_last_success", now.isoformat())
+    
+    logger.info("NVD: Coleta paralela concluída. %d itens prontos para análise.", len(all_cves))
     return all_cves
 
 
@@ -89,8 +138,12 @@ def _parse_cve(cve_data: dict[str, Any]) -> dict[str, Any] | None:
         logger.debug("CVE %s ignorada — CVSS %.1f < MIN %.1f", cve_id, cvss_score, config.MIN_CVSS_SCORE)
         return None
 
-    # Extrair vendor e product do CPE
-    vendor, product = _extract_cpe_info(cve_data)
+    # Extrair TODOS os pares vendor/produto afetados
+    affected_items = _extract_all_cpe_matches(cve_data)
+    
+    # Para compatibilidade, pegamos o primeiro para os campos 'vendor' e 'product'
+    primary_vendor = affected_items[0][0] if affected_items else ""
+    primary_product = affected_items[0][1] if affected_items else ""
 
     # Descrição em inglês
     descriptions = cve_data.get("descriptions", [])
@@ -104,13 +157,19 @@ def _parse_cve(cve_data: dict[str, Any]) -> dict[str, Any] | None:
         "cve_id": cve_id,
         "cvss_score": cvss_score,
         "severity": severity,
-        "vendor": vendor,
-        "product": product,
+        "vendor": primary_vendor,
+        "product": primary_product,
+        "affected_products": affected_items, # Nova lista completa
         "description": description_en,
         "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
         "date": cve_data.get("published", ""),
         "epss_score": None,
         "in_cisa_kev": False,
+        "has_known_exploit": any(
+            "exploit-db.com" in ref.get("url", "").lower() or 
+            "Exploit" in ref.get("tags", []) 
+            for ref in cve_data.get("references", [])
+        ),
         "risk_tag": None,
         "impacted_clients": [],
         "translated": False,
@@ -135,16 +194,29 @@ def _extract_cvss(cve_data: dict[str, Any]) -> tuple[float | None, str]:
     return None, "UNKNOWN"
 
 
-def _extract_cpe_info(cve_data: dict[str, Any]) -> tuple[str, str]:
-    """Extrai vendor e product do primeiro CPE Match encontrado."""
+def _extract_all_cpe_matches(cve_data: dict[str, Any]) -> list[tuple[str, str]]:
+    """Extrai TODOS os pares vendor e produto de forma recursiva."""
+    affected: set[tuple[str, str]] = set()
     configurations = cve_data.get("configurations", [])
-    for cfg in configurations:
-        for node in cfg.get("nodes", []):
+    
+    def _walk_nodes(nodes: list[dict[str, Any]]) -> None:
+        for node in nodes:
+            # 1. Extrair CPEs deste nó
             for match in node.get("cpeMatch", []):
                 cpe_uri = match.get("criteria", "")
                 parts = cpe_uri.split(":")
                 if len(parts) >= 5:
-                    vendor = parts[3].replace("_", " ")
-                    product = parts[4].replace("_", " ")
-                    return vendor, product
-    return "", ""
+                    # Normaliza: 'microsoft' e 'exchange_server' -> 'microsoft', 'exchange server'
+                    vendor = parts[3].replace("_", " ").strip().lower()
+                    product = parts[4].replace("_", " ").strip().lower()
+                    affected.add((vendor, product))
+            
+            # 2. Recursão para nós filhos (NVD 2.0 nesting)
+            children = node.get("children")
+            if children:
+                _walk_nodes(children)
+
+    for cfg in configurations:
+        _walk_nodes(cfg.get("nodes", []))
+                    
+    return list(affected)

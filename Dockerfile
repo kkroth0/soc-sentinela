@@ -11,7 +11,14 @@ LABEL version="1.1.0"
 # Variáveis de ambiente
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    TZ=UTC
+
+# Configura timezone e instala dependências básicas
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tzdata && \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
+    rm -rf /var/lib/apt/lists/*
 
 # Criar usuário não-root
 RUN groupadd --gid 1000 sentinel && \

@@ -1,6 +1,6 @@
 # Threat Intelligence - SOC Sentinel
 
-SOC Sentinel é um motor de coleta e análise automatizada especializado em fontes de Threat Intelligence (CTI) e Vulnerability Management (CVE). Roda 24/7 como container Docker e entrega alertas acionáveis diretamente no Microsoft Teams e Telegram.
+SOC Sentinel é um motor de coleta e análise automatizada especializado em fontes de Threat Intelligence (CTI) e Vulnerability Management (CVE). Roda 24/7 como container Docker e entrega alertas acionáveis diretamente no Microsoft Teams e/ou Telegram.
 
 | Version | Status | Owner |
 |---------|--------|-------|
@@ -109,7 +109,7 @@ Para garantir priorização absoluta, o SOC Sentinel enriquece os dados originai
 ## 🤖 Refinamento com LLM Llama 3.3
 
 O fluxo de processamento de inteligência prioriza eficiência de tokens e rigor técnico:
-- **Tradução:** Utiliza DeepL (primário) ou Groq (fallback) para converter o conteúdo para PT-BR sem adulterar jargões técnicos de cibersegurança (ex: *Buffer Overflow*, *Command Injection* não são traduzidos de forma tosca).
+- **Tradução e Inteligência:** Utiliza exclusivamente o motor de IA da **Groq (Llama 3)** para converter conteúdo para PT-BR e gerar resumos executivos, mantendo o rigor técnico e preservando jargões de cibersegurança (ex: *Buffer Overflow*, *Command Injection*).
 - **Resumo Executivo:** O modelo de raciocínio avançado `llama-3.3-70b-versatile` (Groq) reestrutura o texto extenso da notícia original para a visão de um analista nível 1/2 em três parágrafos: *O que aconteceu → O Impacto → Ação Recomendada*.
 
 ---

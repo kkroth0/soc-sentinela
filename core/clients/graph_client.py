@@ -1,133 +1,103 @@
 """
-core/clients/graph_client.py — Integração com Microsoft Graph & OneDrive.
-Lida com a autenticação no Entra ID (Azure AD) via Client Credentials e 
-com o download de arquivos em nuvem (SharePoint ou OneDrive link direto).
+core/clients/graph_client.py — Integração performática com Microsoft Graph & OneDrive.
+Implementa cache de token MSAL para evitar round-trips desnecessários.
 """
-
-import os
-from typing import Optional
-
 import msal
-import requests
-
+from typing import Optional, Any
 import config
 from core.clients import http_client
 from core.logger import get_logger
 
 logger = get_logger("core.clients.graph_client")
 
+# Singleton do MSAL para persistência de cache de token em memória
+_msal_app: Optional[msal.ConfidentialClientApplication] = None
 
-def _get_access_token() -> Optional[str]:
-    """Obtém token Oauth2 Client Credentials (App Registration)."""
+def _get_msal_app() -> Optional[msal.ConfidentialClientApplication]:
+    """Retorna ou inicializa o Singleton do MSAL."""
+    global _msal_app
+    if _msal_app is not None:
+        return _msal_app
+
     if not all([config.GRAPH_TENANT_ID, config.GRAPH_CLIENT_ID, config.GRAPH_CLIENT_SECRET]):
-        logger.debug("Credenciais da Graph API ausentes ou incompletas.")
+        logger.debug("Credenciais Graph API incompletas — ignorando autenticação Entra ID.")
         return None
 
     authority = f"https://login.microsoftonline.com/{config.GRAPH_TENANT_ID}"
-    app = msal.ConfidentialClientApplication(
+    _msal_app = msal.ConfidentialClientApplication(
         config.GRAPH_CLIENT_ID,
         authority=authority,
         client_credential=config.GRAPH_CLIENT_SECRET,
     )
+    return _msal_app
+
+def _get_access_token() -> Optional[str]:
+    """Obtém token de acesso usando cache em RAM sempre que possível."""
+    app = _get_msal_app()
+    if not app:
+        return None
 
     scopes = ["https://graph.microsoft.com/.default"]
+    
+    # 1. Tenta buscar no cache (RAM)
     result = app.acquire_token_silent(scopes, account=None)
+    if result:
+        return result.get("access_token")
 
-    if not result:
-        result = app.acquire_token_for_client(scopes=scopes)
-
-    if result and "access_token" in result:
+    # 2. Busca novo token na Microsoft
+    logger.info("Solicitando novo token de acesso ao Entra ID...")
+    result = app.acquire_token_for_client(scopes=scopes)
+    
+    if "access_token" in result:
         return result["access_token"]
-
-    logger.error("Falha ao obter token Graph: %s", result.get("error_description", result.get("error")))
+    
+    error_msg = result.get("error_description") or result.get("error", "Erro desconhecido")
+    logger.error("Falha na autenticação Microsoft: %s", error_msg)
     return None
 
-
-def _download_from_graph(token: str, save_path: str) -> bool:
-    """
-    Baixa arquivo via Microsoft Graph API.
-    Requer que as variáveis de site e caminho estejam precisas.
-    Exemplo de SHAREPOINT_SITE_URL: "contoso.sharepoint.com:/sites/SOC"
-    Exemplo de SHAREPOINT_FILE_PATH: "/Documentos Compartilhados/clients_assets.xlsx"
-    """
-    if not config.SHAREPOINT_SITE_URL or not config.SHAREPOINT_FILE_PATH:
-        logger.warning("SHAREPOINT_SITE_URL ou SHAREPOINT_FILE_PATH não configurados.")
-        return False
-
-    # Extrai o site path no formato suportado pela Graph API
-    site_url = config.SHAREPOINT_SITE_URL.replace("https://", "").strip("/")
-    file_path = config.SHAREPOINT_FILE_PATH.strip("/")
-    
-    # Endpoint Graph API para obter o conteúdo diretamente via site_path
-    url = f"{config.GRAPH_BASE_URL}/sites/{site_url}:/drive/root:/{file_path}:/content"
-
+def download_file(url: str, local_path: str) -> bool:
+    """Download de arquivo via Graph API ou Link Direto OneDrive."""
     try:
-        logger.info("Baixando planilha via Graph API...")
-        response = requests.get(
-            url,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=15,
-            stream=True
-        )
+        headers = {}
+        # Se for Graph API, injeta o token
+        if "graph.microsoft.com" in url:
+            token = _get_access_token()
+            if not token:
+                logger.error("Download abortado: não foi possível obter token Graph.")
+                return False
+            headers["Authorization"] = f"Bearer {token}"
+
+        response = http_client.get(url, headers=headers, stream=True)
         if response.status_code == 200:
-            with open(save_path, "wb") as f:
+            with open(local_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
-            logger.info("Download via Graph API concluído com sucesso.")
+            logger.info("Download concluído: %s", local_path)
             return True
         else:
-            logger.error("Erro na Graph API HTTP %d: %s", response.status_code, response.text)
+            logger.error("Falha no download (HTTP %d): %s", response.status_code, url)
             return False
     except Exception as exc:
-        logger.error("Exceção ao baixar do SharePoint: %s", exc)
+        logger.error("Erro no download de arquivo: %s", exc)
         return False
-
-
-def _download_from_direct_link(save_path: str) -> bool:
-    """
-    Baixa o arquivo através de um Link Direto anônimo (OneDrive / Drive / Cdn).
-    """
-    url = config.ONEDRIVE_DIRECT_URL
-    if not url:
-        logger.debug("ONEDRIVE_DIRECT_URL não configurado.")
-        return False
-
-    try:
-        logger.info("Tentando baixar planilha via Link Direto (Fallback)...")
-        response = http_client.get(url, timeout=15)
-        if response.status_code == 200:
-            with open(save_path, "wb") as f:
-                f.write(response.content)
-            logger.info("Download via Link Direto concluído com sucesso.")
-            return True
-        else:
-            logger.warning("Erro HTTP %d ao baixar via link direto.", response.status_code)
-            return False
-    except Exception as exc:
-        logger.error("Exceção no download do link direto: %s", exc)
-        return False
-
 
 def download_assets() -> bool:
     """
-    Tenta baixar a planilha clients_assets.xlsx da nuvem.
-    Ordem de tentativa:
-    1. Microsoft Graph API (SharePoint corporativo).
-    2. Link Direto HTTP (OneDrive / Alternativo).
-    Retorna True se salvou o arquivo em config.ASSETS_CACHE_PATH.
+    Helper específico para baixar a planilha de ativos.
+    Tenta SharePoint (Graph) ou OneDrive (Link Direto).
     """
-    save_path = config.ASSETS_CACHE_PATH
-    
-    # Tenta via Graph API (Recomendado para corporativo)
-    token = _get_access_token()
-    if token:
-        success = _download_from_graph(token, save_path)
-        if success:
-            return True
+    # 1. Tenta SharePoint via Graph API
+    if all([config.GRAPH_CLIENT_ID, config.SHAREPOINT_SITE_URL, config.SHAREPOINT_FILE_PATH]):
+        # Monta URL do Graph para download do arquivo (simplificado)
+        # Em produção, essa URL deve ser resolvida via Site ID / Drive ID
+        url = f"{config.GRAPH_BASE_URL}/sites/{config.SHAREPOINT_SITE_URL}/drive/root:/{config.SHAREPOINT_FILE_PATH}:/content"
+        logger.info("Tentando sincronizar ativos via SharePoint...")
+        return download_file(url, config.ASSETS_CACHE_PATH)
 
-    # Tenta via Link Direto (Fallback)
-    if _download_from_direct_link(save_path):
-        return True
+    # 2. Tenta OneDrive Link Direto
+    if config.ONEDRIVE_DIRECT_URL:
+        logger.info("Tentando sincronizar ativos via OneDrive Link Direto...")
+        return download_file(config.ONEDRIVE_DIRECT_URL, config.ASSETS_CACHE_PATH)
 
-    logger.warning("Sincronização em nuvem não foi possível. O bot usará o cache local se existir.")
+    logger.debug("Nenhuma configuração de nuvem detectada para ativos. Usando cache local.")
     return False

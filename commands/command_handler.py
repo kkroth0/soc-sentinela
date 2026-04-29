@@ -35,13 +35,23 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
         """Processa requisições POST dos comandos."""
         path = self.path.rstrip("/")
 
-        # Validação de secret (se configurado) previne Timing Attacks via hmac
+        # 1. Autenticação (Opcional conforme solicitado, mas validada se houver Secret)
         if config.TEAMS_WEBHOOK_SECRET:
             auth = self.headers.get("Authorization", "")
             expected_auth = f"Bearer {config.TEAMS_WEBHOOK_SECRET}"
             if not hmac.compare_digest(auth, expected_auth):
+                logger.warning("Tentativa de acesso não autorizado (Token inválido): %s", self.address_string())
                 self._respond(401, {"error": "Unauthorized"})
                 return
+        else:
+            # Log de auditoria para modo inseguro
+            logger.debug("Comando recebido em modo INSEGURO (sem Secret): %s", path)
+
+        # 2. Limite de segurança p/ Payload (DoS prevention)
+        length = int(self.headers.get("Content-Length", 0))
+        if length > 1 * 1024 * 1024:  # Max 1MB
+            self._respond(413, {"error": "Payload too large"})
+            return
 
         handlers = {
             "/ListeCVEs": self._handle_list_cves,
@@ -50,6 +60,7 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
             "/Iniciar": self._handle_iniciar,
             "/ExportarMes": self._handle_exportar_mes,
             "/AtualizarAtivos": self._handle_atualizar_ativos,
+            "/Recarregar": self._handle_recarregar,
         }
 
         handler = handlers.get(path)
@@ -176,6 +187,20 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
 
         self._respond(202, {"message": "Sincronização iniciada. Os dados serão atualizados em instantes."})
         logger.info("Comando /AtualizarAtivos executado")
+
+    def _handle_recarregar(self) -> None:
+        """Recarrega aliases e categorias CTI dinamicamente."""
+        from cve.aliases import reload_aliases
+        from cti.scorer import reload_categories
+        
+        try:
+            reload_aliases()
+            reload_categories()
+            self._respond(200, {"message": "Parâmetros de inteligência recarregados com sucesso (Aliases e CTI Categories)."})
+            logger.info("Comando /Recarregar — Aliases e Categorias CTI atualizados")
+        except Exception as exc:
+            logger.error("Erro ao recarregar parâmetros: %s", exc)
+            self._respond(500, {"error": f"Falha ao recarregar: {exc}"})
 
     def _respond(self, status: int, body: dict) -> None:
         """Envia resposta JSON."""

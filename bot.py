@@ -5,8 +5,9 @@ Agenda e inicializa pipelines CVE/CTI e relatórios via APScheduler.
 
 import signal
 import sys
+import time
 
-from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 
 import config
 from commands import command_handler
@@ -40,113 +41,77 @@ def main() -> None:
         Version: 1.0.0 | Status: Active Monitoring
         © 2026 @kkroth0 - Matheus Andrade
 
-══════════════════════════════════════════════════════════════════════
-✓ Sistema iniciado e pronto para monitoramento
-══════════════════════════════════════════════════════════════════════
+    logger.info("----------------------------------------------------------------------")
+    logger.info("v Sistema iniciado e pronto para monitoramento")
+    logger.info("----------------------------------------------------------------------")
     """
     for line in banner.splitlines():
         if line.strip():
             logger.info(line)
 
-    # ── 1. Inicializar banco de dados ─────────────────────────────────
+    # ── 0. Graceful shutdown (Mover para o início para capturar Ctrl+C cedo) ──
+    def _shutdown(signum: int = 0, frame: object = None) -> None:
+        import os
+        from core.clients import http_client
+        logger.info("Iniciando encerramento seguro do SOC Sentinel...")
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception:
+            pass
+        
+        # Garante fechamento de recursos
+        storage.close_db()
+        http_client.close_session()
+        
+        logger.info("Bot finalizado. Até logo! 🛡️")
+        os._exit(0)
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+    if hasattr(signal, 'SIGBREAK'): # Suporte específico para Windows
+        signal.signal(signal.SIGBREAK, _shutdown)
+
+    # ── 1. Validar Configurações ──────────────────────────────────────
+    try:
+        config.validate_config()
+    except Exception as exc:
+        logger.error(str(exc))
+        sys.exit(1)
+
+    # ── 2. Inicializar banco de dados ─────────────────────────────────
     storage.init_db()
 
-    # ── 2. Iniciar servidor de comandos ───────────────────────────────
+    # ── 3. Iniciar servidor de comandos ───────────────────────────────
     command_handler.set_pipeline_trigger(_run_all_pipelines)
     command_handler.start_server()
-    logger.info("Servidor de comandos ativo na porta %d", config.COMMAND_PORT)
 
-    # ── 3. Configurar scheduler ───────────────────────────────────────
-    scheduler = BlockingScheduler(timezone="UTC")
+    # ── 4. Configurar scheduler ───────────────────────────────────────
+    scheduler = BackgroundScheduler(timezone="UTC")
 
-    # Pipeline CVE — a cada TIME_WINDOW_MINUTES
-    scheduler.add_job(
-        cve_pipeline.run,
-        "interval",
-        minutes=config.TIME_WINDOW_MINUTES,
-        id="cve_pipeline",
-        name="Pipeline CVE",
-        max_instances=1,
-        coalesce=True,
-    )
-    logger.info("Pipeline CVE agendado: a cada %d minutos", config.TIME_WINDOW_MINUTES)
-
-    # Pipeline CTI — a cada NEWS_TIME_WINDOW_MINUTES
-    scheduler.add_job(
-        cti_pipeline.run,
-        "interval",
-        minutes=config.NEWS_TIME_WINDOW_MINUTES,
-        id="cti_pipeline",
-        name="Pipeline CTI",
-        max_instances=1,
-        coalesce=True,
-    )
-    logger.info("Pipeline CTI agendado: a cada %d minutos", config.NEWS_TIME_WINDOW_MINUTES)
-
-    # Relatório semanal — toda segunda-feira às 08:00 UTC
-    scheduler.add_job(
-        reporter.run_weekly_report,
-        "cron",
-        day_of_week="mon",
-        hour=8,
-        minute=0,
-        id="weekly_report",
-        name="Relatório Semanal",
-        max_instances=1,
-    )
-    logger.info("Relatório semanal agendado: segunda-feira 08:00 UTC")
-
-    # Relatório mensal — dia 1 de cada mês às 08:00 UTC
-    scheduler.add_job(
-        reporter.run_monthly_report,
-        "cron",
-        day=1,
-        hour=8,
-        minute=0,
-        id="monthly_report",
-        name="Relatório Mensal",
-        max_instances=1,
-    )
-    logger.info("Relatório mensal agendado: dia 1 às 08:00 UTC")
-
-    # Sincronização de Ativos (Planilha na Nuvem) — a cada 12 horas
-    scheduler.add_job(
-        data_manager.sync_assets_from_cloud,
-        "interval",
-        hours=12,
-        id="sync_assets",
-        name="Sincronização de Ativos",
-        max_instances=1,
-        coalesce=True,
-    )
-    logger.info("Sincronização de ativos agendada: a cada 12 horas")
-
-    # ── 4. Graceful shutdown ──────────────────────────────────────────
-    def _shutdown(signum: int, frame: object) -> None:
-        logger.info("Sinal %d recebido — encerrando gracefully...", signum)
-        storage.close_db()
-        scheduler.shutdown(wait=False)
-        sys.exit(0)
-
-    signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
+    scheduler.add_job(cve_pipeline.run, "interval", minutes=config.TIME_WINDOW_MINUTES, id="cve_pipeline", name="Pipeline CVE", max_instances=1, coalesce=True)
+    scheduler.add_job(cti_pipeline.run, "interval", minutes=config.NEWS_TIME_WINDOW_MINUTES, id="cti_pipeline", name="Pipeline CTI", max_instances=1, coalesce=True)
+    scheduler.add_job(reporter.run_weekly_report, "cron", day_of_week="mon", hour=8, minute=0, id="weekly_report", name="Relatório Semanal", max_instances=1)
+    scheduler.add_job(reporter.run_monthly_report, "cron", day=1, hour=8, minute=0, id="monthly_report", name="Relatório Mensal", max_instances=1)
+    scheduler.add_job(data_manager.sync_assets_from_cloud, "interval", hours=12, id="sync_assets", name="Sincronização de Ativos", max_instances=1, coalesce=True)
 
     # ── 5. Execução inicial imediata ──────────────────────────────────
     logger.info("Executando inicialização do ambiente...")
     try:
-        # Sincroniza arquivos ANTES de rodar pipelines
         data_manager.sync_assets_from_cloud()
-        logger.info("Rodando pipelines iniciais...")
-        _run_all_pipelines()
+        cve_pipeline.run()
+        cti_pipeline.run()
     except Exception as exc:
-        logger.error("Falha na execução inicial: %s", exc)
+        logger.error("Falha na carga inicial: %s", exc)
 
-    # ── 6. Iniciar scheduler (blocking) ───────────────────────────────
+    # ── 6. Iniciar scheduler (background) ─────────────────────────────
     logger.info("Scheduler iniciado — SOC Sentinel operacional ✅")
+    scheduler.start()
+
     try:
-        scheduler.start()
+        while True:
+            time.sleep(1)
     except (KeyboardInterrupt, SystemExit):
-        logger.info("SOC Sentinel encerrado.")
+        _shutdown()
 
 
 if __name__ == "__main__":

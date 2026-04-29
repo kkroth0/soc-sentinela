@@ -9,6 +9,7 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from cve.pipeline import should_alert
+from cve.asset_matcher import normalize_asset_map
 
 
 class TestShouldAlert:
@@ -26,7 +27,8 @@ class TestShouldAlert:
         mock_scorer.enrich_cve.side_effect = lambda cve, bl: cve.update({"risk_tag": "HIGH"}) or cve
         mock_matcher.match_cve_to_clients.return_value = ["CLIENTE1", "CLIENTE2"]
 
-        success, reason = should_alert(sample_cve, sample_asset_map, sample_blacklist)
+        norm = normalize_asset_map(sample_asset_map)
+        success, reason = should_alert(sample_cve, norm, sample_blacklist)
         assert success is True
         assert "cliente(s) impactado(s)" in reason
 
@@ -42,7 +44,8 @@ class TestShouldAlert:
         mock_scorer.enrich_cve.side_effect = lambda cve, bl: cve.update({"risk_tag": "LOW"}) or cve
         mock_matcher.match_cve_to_clients.return_value = []
 
-        success, reason = should_alert(sample_cve_low, sample_asset_map, sample_blacklist)
+        norm = normalize_asset_map(sample_asset_map)
+        success, reason = should_alert(sample_cve_low, norm, sample_blacklist)
         assert success is False
         assert "sem match de ativos" in reason
 
@@ -58,7 +61,8 @@ class TestShouldAlert:
         mock_scorer.enrich_cve.side_effect = lambda cve, bl: cve.update({"risk_tag": "CRITICAL"}) or cve
         mock_matcher.match_cve_to_clients.return_value = []
 
-        success, reason = should_alert(sample_cve, sample_asset_map, sample_blacklist)
+        norm = normalize_asset_map(sample_asset_map)
+        success, reason = should_alert(sample_cve, norm, sample_blacklist)
         assert success is False
         assert "sem match de ativos" in reason
 
@@ -75,7 +79,8 @@ class TestShouldAlert:
         # Pipeline exige match de ativos antes de checar blacklist
         mock_matcher.match_cve_to_clients.return_value = ["CLIENTE1"]
 
-        success, reason = should_alert(sample_cve_blacklisted, sample_asset_map, sample_blacklist)
+        norm = normalize_asset_map(sample_asset_map)
+        success, reason = should_alert(sample_cve_blacklisted, norm, sample_blacklist)
         assert success is False
         assert "blacklist" in reason
 
@@ -86,7 +91,8 @@ class TestShouldAlert:
         """CVE já enviada → não deve alertar (deduplicação)."""
         mock_storage.is_cve_sent.return_value = True
 
-        success, reason = should_alert(sample_cve, sample_asset_map, sample_blacklist)
+        norm = normalize_asset_map(sample_asset_map)
+        success, reason = should_alert(sample_cve, norm, sample_blacklist)
         assert success is False
         assert reason == "já enviada"
 
@@ -98,6 +104,7 @@ class TestShouldAlert:
         mock_storage.is_cve_sent.return_value = False
         mock_storage.acquire_cve_lock.return_value = False
 
-        success, reason = should_alert(sample_cve, sample_asset_map, sample_blacklist)
+        norm = normalize_asset_map(sample_asset_map)
+        success, reason = should_alert(sample_cve, norm, sample_blacklist)
         assert success is False
         assert reason == "já em processamento"

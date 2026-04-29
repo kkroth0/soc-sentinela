@@ -6,91 +6,97 @@ import html
 
 from typing import Any
 
+from core.utils.security import escape_adaptive_card_markdown, sanitize_url
 from core.logger import get_logger
 
 logger = get_logger("core.notifications.formatters.cti_formatter")
 
-_LAYER_LABELS: dict[int, str] = {
-    1: "🔴 CVE / Exploit DB",
-    2: "🟠 Vendor Advisory",
-    3: "🔵 Threat Intelligence",
-    4: "🟢 Radar Regional (BR/LATAM)",
-}
+_CATEGORY_LABEL = "🔵 Threat Intelligence"
 
 
-def build_news_card(article: dict[str, Any]) -> dict[str, Any]:
-    """Monta Adaptive Card para um artigo de notícia CTI."""
-    title = article.get("title_pt") or article.get("title", "Sem título")
-    summary = article.get("summary_pt") or article.get("summary", "")
-    source = article.get("source", "Desconhecido")
-    layer = article.get("layer", 3)
-    url = article.get("url", "")
-    date = article.get("date", "")
+from core.notifications.formatters.component_factory import (
+    build_header, build_fact_set, build_section_title, wrap_card
+)
 
-    layer_label = _LAYER_LABELS.get(layer, "📰 Notícia")
+from core.models import StandardCTINews
 
-    body: list[dict] = [
-        {
-            "type": "TextBlock",
-            "text": f"{layer_label}",
-            "weight": "Bolder",
-            "size": "Small",
-            "color": "accent",
-        },
-        {
-            "type": "TextBlock",
-            "text": title,
-            "weight": "Bolder",
-            "size": "Medium",
-            "wrap": True,
-        },
-        {
-            "type": "FactSet",
-            "facts": [
-                {"title": "Fonte", "value": source},
-                {"title": "Data", "value": date[:10] if date else "N/A"},
-            ],
-        },
+def build_news_card(news_input: Any) -> dict[str, Any]:
+    """Monta Adaptive Card para um artigo de notícia CTI com design Premium."""
+    # Garante que temos um objeto StandardCTINews (DTO)
+    if isinstance(news_input, dict):
+        news = StandardCTINews(
+            title=news_input.get("title_pt") or news_input.get("title", "Sem título"),
+            summary=news_input.get("summary_pt") or news_input.get("summary", ""),
+            source=news_input.get("source", "Desconhecido"),
+            layer=int(news_input.get("layer", 3)),
+            url=news_input.get("url", ""),
+            date=news_input.get("date", ""),
+            matched_assets=news_input.get("impacted_clients") or news_input.get("matched_assets", [])
+        )
+    else:
+        news = news_input
+
+    title_esc = escape_adaptive_card_markdown(news.title)
+    summary_esc = escape_adaptive_card_markdown(news.summary)
+    source_esc = escape_adaptive_card_markdown(news.source)
+    url_san = sanitize_url(news.url)
+    
+    body = [
+        build_header(f"🚨 CTI Report - {title_esc}", "", color="accent"),
+        build_fact_set([
+            ("Categoria", _CATEGORY_LABEL),
+            ("Fonte", source_esc),
+            ("Data", news.date[:10] if news.date else "N/A")
+        ])
     ]
 
-    if summary:
+    if news.matched_assets:
         body.append({
-            "type": "TextBlock",
-            "text": summary[:400],
-            "wrap": True,
+            "type": "Container",
+            "style": "attention",
             "spacing": "Medium",
+            "items": [{
+                "type": "TextBlock",
+                "text": f"🎯 **Ativos Correspondentes:** {' | '.join(news.matched_assets)}",
+                "weight": "Bolder", "wrap": True, "size": "Small"
+            }]
         })
 
-    actions: list[dict] = []
-    if url:
-        actions.append({
-            "type": "Action.OpenUrl",
-            "title": "Ler artigo completo",
-            "url": url,
-        })
+    if summary_esc:
+        text = summary_esc[:800]
+        if url_san: text += f"\n\n**Fonte:** [{url_san}]({url_san})"
+        body.extend([
+            build_section_title("Descrição"),
+            {"type": "TextBlock", "text": text, "wrap": True, "spacing": "Small", "size": "Small", "isSubtle": True}
+        ])
 
-    card: dict[str, Any] = {
-        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-        "type": "AdaptiveCard",
-        "version": "1.4",
-        "body": body,
-    }
-    if actions:
-        card["actions"] = actions
+    actions = [{"type": "Action.OpenUrl", "title": "Ler artigo completo", "url": url_san}] if url_san else None
+    
+    logger.info("Card de notícia montado: %s (%s)", source_esc, title_esc[:40])
+    return wrap_card(body, actions)
 
-    logger.info("Card de notícia montado: %s (%s)", source, title[:40])
-    return card
-
-def build_news_telegram_message(article: dict[str, Any]) -> str:
+def build_news_telegram_message(news_input: Any) -> str:
     """Monta a mensagem HTML para o Telegram escapando campos."""
+    # Garante que temos um objeto StandardCTINews (DTO)
+    if isinstance(news_input, dict):
+        news = StandardCTINews(
+            title=news_input.get("title_pt") or news_input.get("title", "Sem título"),
+            summary=news_input.get("summary_pt") or news_input.get("summary", ""),
+            source=news_input.get("source", "Desconhecido"),
+            layer=int(news_input.get("layer", 3)),
+            url=news_input.get("url", ""),
+            date=news_input.get("date", ""),
+            matched_assets=news_input.get("impacted_clients") or news_input.get("matched_assets", [])
+        )
+    else:
+        news = news_input
 
-    title = html.escape(article.get("title_pt") or article.get("title", "Sem título"))
-    summary = html.escape(article.get("summary_pt") or article.get("summary", ""))
-    source = html.escape(article.get("source", "Desconhecido"))
-    layer = article.get("layer", 3)
-    url = html.escape(article.get("url", ""))
+    title = html.escape(news.title)
+    summary = html.escape(news.summary)
+    source = html.escape(news.source)
+    url = html.escape(news.url)
 
-    layer_label = _LAYER_LABELS.get(layer, "📰 Notícia")
+    layer_label = _LAYER_LABELS.get(news.layer, "📰 Notícia")
 
     msg = f"<b>{layer_label}</b>\n\n"
     msg += f"<b>{title}</b>\n\n"
