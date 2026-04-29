@@ -60,6 +60,7 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
             "/Iniciar": self._handle_iniciar,
             "/ExportarMes": self._handle_exportar_mes,
             "/AtualizarAtivos": self._handle_atualizar_ativos,
+            "/Recarregar": self._handle_recarregar,
         }
 
         handler = handlers.get(path)
@@ -186,6 +187,20 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
 
         self._respond(202, {"message": "Sincronização iniciada. Os dados serão atualizados em instantes."})
         logger.info("Comando /AtualizarAtivos executado")
+
+    def _handle_recarregar(self) -> None:
+        """Recarrega aliases e categorias CTI dinamicamente."""
+        from cve.aliases import reload_aliases
+        from cti.scorer import reload_categories
+        
+        try:
+            reload_aliases()
+            reload_categories()
+            self._respond(200, {"message": "Parâmetros de inteligência recarregados com sucesso (Aliases e CTI Categories)."})
+            logger.info("Comando /Recarregar — Aliases e Categorias CTI atualizados")
+        except Exception as exc:
+            logger.error("Erro ao recarregar parâmetros: %s", exc)
+            self._respond(500, {"error": f"Falha ao recarregar: {exc}"})
 
     def _respond(self, status: int, body: dict) -> None:
         """Envia resposta JSON."""

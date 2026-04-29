@@ -6,6 +6,7 @@ Respeita rate limits (50 req/30s com key, 5 req/30s sem key).
 import json
 import re
 import time
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -20,6 +21,20 @@ _RESULTS_PER_PAGE: int = 100
 _MAX_RETRIES: int = 3
 _RATE_LIMIT_DELAY: float = 2.0
 
+_nvd_lock = threading.Lock()
+_last_req_time = 0.0
+
+def _rate_limit_wait():
+    """Garante o respeito estrito ao limite de requisições da NVD."""
+    global _last_req_time
+    # 50 req/30s com key (0.6s), 5 req/30s sem key (6.0s)
+    min_interval = 0.65 if config.NVD_API_KEY else 6.5
+    with _nvd_lock:
+        now = time.time()
+        elapsed = now - _last_req_time
+        if elapsed < min_interval:
+            time.sleep(min_interval - elapsed)
+        _last_req_time = time.time()
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -58,7 +73,7 @@ def fetch_recent_cves(time_window_minutes: int | None = None) -> list[dict[str, 
             return []
             
         total_pages = (total_results // _RESULTS_PER_PAGE) + 1
-        logger.info("NVD: %d vulnerabilidades detectadas. Baixando %d páginas em paralelo...", total_results, total_pages)
+        logger.info("NVD: %d vulnerabilidades detectadas. Baixando %d páginas em paralelo com controle de banda...", total_results, total_pages)
 
     except Exception as exc:
         logger.error("Falha na sondagem inicial NVD: %s", exc)
@@ -73,11 +88,11 @@ def fetch_recent_cves(time_window_minutes: int | None = None) -> list[dict[str, 
         # Retry loop robusto para evitar perda de dados
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
-                # Delay escalonado para respeitar rate limits (50 req/30s)
-                # O delay aumenta se houver falhas consecutivas
-                sleep_time = (0.5 * (page_num % 5)) + (attempt * 2.0)
-                time.sleep(sleep_time)
+                # Retries subsequentes ganham um backoff extra
+                if attempt > 1:
+                    time.sleep(attempt * 2.0)
 
+                _rate_limit_wait()
                 resp = http_client.get(config.NVD_BASE_URL, params=params, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -96,8 +111,8 @@ def fetch_recent_cves(time_window_minutes: int | None = None) -> list[dict[str, 
         
         return []
 
-    # Executa com 5 workers (ideal para NVD Key)
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    # Executa com 3 workers para ser mais gentil com a API
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = [executor.submit(fetch_page, p) for p in range(total_pages)]
         for future in as_completed(futures):
             all_cves.extend(future.result())

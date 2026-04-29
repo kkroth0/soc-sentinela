@@ -19,7 +19,7 @@ logger = get_logger("cve.pipeline")
 
 def should_alert(
     cve: dict[str, Any],
-    asset_map: dict[str, dict[str, Any]],
+    normalized_assets: list[dict[str, Any]],
     blacklist: list[dict[str, Any]],
 ) -> tuple[bool, str]:
     """Decide se uma CVE se torna alerta."""
@@ -32,10 +32,11 @@ def should_alert(
         return False, "já em processamento"
 
     try:
-        clients = asset_matcher.match_cve_to_clients(cve, asset_map)
+        clients = asset_matcher.match_cve_to_clients(cve, normalized_assets)
         cve["impacted_clients"] = clients
 
         if not clients:
+            logger.debug("CVE %s ignorada: %s/%s não encontrado nos ativos", cve_id, cve.get("vendor"), cve.get("product"))
             return False, "sem match de ativos"
 
         risk_scorer.enrich_cve(cve, blacklist)
@@ -51,7 +52,7 @@ def should_alert(
 
 def _process_single_cve(
     cve: dict[str, Any],
-    asset_map: dict[str, dict[str, Any]],
+    normalized_assets: list[dict[str, Any]],
     blacklist: list[dict[str, Any]],
     notifier: BaseNotifier
 ) -> tuple[bool, str]:
@@ -59,7 +60,7 @@ def _process_single_cve(
     cve_id = cve.get("cve_id", "")
 
     try:
-        alert_rule, reason = should_alert(cve, asset_map, blacklist)
+        alert_rule, reason = should_alert(cve, normalized_assets, blacklist)
         if not alert_rule:
             return False, reason
 
@@ -100,12 +101,13 @@ def _process_single_cve(
 
 def run(notifier: BaseNotifier = global_dispatcher) -> dict[str, int]:
     """Executa o pipeline CVE injetando o notificador."""
-    logger.info("═══ Pipeline CVE iniciado ═══")
+    logger.info("--- Pipeline CVE iniciado ---")
     stats = {"total": 0, "alerted": 0, "skipped": 0, "errors": 0}
     skipped_reasons = {}
 
     try:
         asset_map = get_asset_map()
+        normalized_assets = asset_matcher.normalize_asset_map(asset_map)
         blacklist = get_blacklist()
         cves = nvd_client.fetch_recent_cves()
         stats["total"] = len(cves)
@@ -113,7 +115,7 @@ def run(notifier: BaseNotifier = global_dispatcher) -> dict[str, int]:
 
         with ThreadPoolExecutor(max_workers=3) as executor:
             future_to_cve = {
-                executor.submit(_process_single_cve, cve, asset_map, blacklist, notifier): cve 
+                executor.submit(_process_single_cve, cve, normalized_assets, blacklist, notifier): cve 
                 for cve in cves
             }
             
@@ -144,7 +146,7 @@ def run(notifier: BaseNotifier = global_dispatcher) -> dict[str, int]:
             logger.info("  - %d CVE(s) ignorada(s) por: %s", count, reason)
 
     logger.info(
-        "═══ Pipeline CVE finalizado — total=%d alertas=%d skip=%d erros=%d ═══",
+        "--- Pipeline CVE finalizado — total=%d alertas=%d skip=%d erros=%d ---",
         stats["total"], stats["alerted"], stats["skipped"], stats["errors"],
     )
     return stats

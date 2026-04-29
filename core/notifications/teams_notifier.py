@@ -27,13 +27,13 @@ class TeamsNotifier(BaseNotifier):
         card_payload = build_cve_card(alert)
         # Tenta canal específico, senão fallback para o global
         webhook = config.TEAMS_WEBHOOK_CVE or config.TEAMS_WEBHOOK_URL
-        return send_card(card_payload, webhook_url=webhook)
+        return send_card(card_payload, webhook_url=webhook, category="CVE")
 
     def send_cti_news(self, news: StandardCTINews) -> bool:
         card_payload = build_news_card(news)
         # Tenta canal específico, senão fallback para o global
         webhook = config.TEAMS_WEBHOOK_CTI or config.TEAMS_WEBHOOK_URL
-        return send_card(card_payload, webhook_url=webhook)
+        return send_card(card_payload, webhook_url=webhook, category="CTI")
 
     def send_report(self, stats: dict[str, Any], report_type: str) -> bool:
         if report_type == "weekly":

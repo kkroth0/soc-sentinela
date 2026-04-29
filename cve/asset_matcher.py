@@ -18,29 +18,11 @@ def _get_pattern(term: str) -> re.Pattern:
         _REGEX_CACHE[term] = re.compile(r'\b' + re.escape(term) + r'\b', re.IGNORECASE)
     return _REGEX_CACHE[term]
 
-def match_cve_to_clients(
-    cve: dict[str, Any],
-    asset_map: dict[str, dict[str, Any]],
-) -> list[str]:
+def normalize_asset_map(asset_map: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """
-    Verifica se o vendor/product de uma CVE corresponde a ativos de clientes.
-    Otimizado para performance O(N*M) com minimização de overhead.
+    Normaliza o asset_map uma única vez para evitar processamento repetitivo.
+    Retorna uma lista de dicionários otimizada para o loop de match.
     """
-    cve_id = cve.get("cve_id", "UNKNOWN")
-    affected_items = cve.get("affected_products", [])
-    
-    if not affected_items:
-        # Fallback para vendor/product principal se a lista estiver vazia
-        v = cve.get("vendor")
-        p = cve.get("product")
-        if v or p:
-            affected_items = [(v or "", p or "")]
-        else:
-            return []
-
-    matched_clients: set[str] = set()
-    
-    # 1. Normalizar o asset_map para evitar processamento repetitivo
     normalized_assets = []
     for key, data in asset_map.items():
         v_asset, _, p_asset = key.partition(":")
@@ -59,8 +41,31 @@ def match_cve_to_clients(
             "aliases": aliases,
             "clients": clients
         })
+    return normalized_assets
 
-    # 2. Cruzamento
+def match_cve_to_clients(
+    cve: dict[str, Any],
+    normalized_assets: list[dict[str, Any]],
+) -> list[str]:
+    """
+    Verifica se o vendor/product de uma CVE corresponde a ativos de clientes.
+    Otimizado para performance O(N*M) com minimização de overhead.
+    """
+    cve_id = cve.get("cve_id", "UNKNOWN")
+    affected_items = cve.get("affected_products", [])
+    
+    if not affected_items:
+        # Fallback para vendor/product principal se a lista estiver vazia
+        v = cve.get("vendor")
+        p = cve.get("product")
+        if v or p:
+            affected_items = [(v or "", p or "")]
+        else:
+            return []
+
+    matched_clients: set[str] = set()
+
+    # Cruzamento
     for v_nvd, p_nvd in affected_items:
         v_nvd_clean = str(v_nvd).strip().lower()
         p_nvd_clean = str(p_nvd).strip().lower().replace("_", " ")
@@ -83,6 +88,9 @@ def match_cve_to_clients(
             
             if not vendor_match:
                 continue
+
+            # Se chegamos aqui, o Vendor deu match.
+            logger.debug("CVE %s: Vendor match detectado (%s == %s). Verificando produtos...", cve_id, asset["v"], v_nvd_clean)
 
             # Match de Produto
             if not asset["p"]: # Se produto no Excel for vazio, aceita qualquer produto do vendor

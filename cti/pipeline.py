@@ -81,7 +81,7 @@ def run(notifier: BaseNotifier = global_dispatcher) -> dict[str, int]:
     Executa o pipeline CTI completo.
     Injeta o notifier (default: global_dispatcher) para facilitar testes.
     """
-    logger.info("═══ Pipeline CTI iniciado ═══")
+    logger.info("--- Pipeline CTI iniciado ---")
     stats = {"total": 0, "sent": 0, "skipped": 0, "errors": 0}
     skipped_reasons = {}
 
@@ -123,7 +123,7 @@ def run(notifier: BaseNotifier = global_dispatcher) -> dict[str, int]:
             logger.info("  - [%s] %s: %s", url[:30] + "...", data["title"], data["reason"])
 
     logger.info(
-        "═══ Pipeline CTI finalizado — total=%d enviados=%d skip=%d erros=%d ═══",
+        "--- Pipeline CTI finalizado — total=%d enviados=%d skip=%d erros=%d ---",
         stats["total"], stats["sent"], stats["skipped"], stats["errors"],
     )
     return stats

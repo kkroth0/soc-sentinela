@@ -19,34 +19,47 @@ _SEVERITY_COLORS: dict[str, str] = {
     "LOG_ONLY": "default",
 }
 
-def build_cve_card(cve: Any) -> dict[str, Any]:
+_CATEGORY_LABEL = "🟠 Análise de Vulnerabilidade"
+
+from core.models import StandardCVEAlert
+
+def build_cve_card(cve_input: Any) -> dict[str, Any]:
     """Monta Adaptive Card para uma CVE usando a component_factory."""
-    # Extração de dados (Objeto ou Dict)
-    cve_id = cve.cve_id if hasattr(cve, "cve_id") else cve.get("cve_id", "N/A")
-    risk_tag = cve.risk_tag if hasattr(cve, "risk_tag") else cve.get("risk_tag", "UNKNOWN")
-    cvss = cve.cvss_score if hasattr(cve, "cvss_score") else cve.get("cvss_score")
-    vendor = cve.vendor if hasattr(cve, "vendor") else cve.get("vendor", "N/A")
-    product = cve.product if hasattr(cve, "product") else cve.get("product", "N/A")
-    url = cve.url if hasattr(cve, "url") else cve.get("url", "")
-    date = cve.date if hasattr(cve, "date") else cve.get("date", "")
-    headline = cve.headline if hasattr(cve, "headline") else cve.get("headline", "")
-    description = cve.description if hasattr(cve, "description") else (cve.get("description_pt") or cve.get("description", ""))
-    clients = cve.impacted_clients if hasattr(cve, "impacted_clients") else cve.get("impacted_clients", [])
+    # Garante que temos um objeto StandardCVEAlert (DTO)
+    if isinstance(cve_input, dict):
+        # Mapeia campos do dict para o construtor da Dataclass se necessário
+        cve = StandardCVEAlert(
+            cve_id=cve_input.get("cve_id", "N/A"),
+            cvss_score=cve_input.get("cvss_score"),
+            severity=cve_input.get("severity", "UNKNOWN"),
+            risk_tag=cve_input.get("risk_tag", "UNKNOWN"),
+            vendor=cve_input.get("vendor", "N/A"),
+            product=cve_input.get("product", "N/A"),
+            description=cve_input.get("description_pt") or cve_input.get("description", ""),
+            url=cve_input.get("url", ""),
+            date=cve_input.get("date", ""),
+            impacted_clients=cve_input.get("impacted_clients", []),
+            in_cisa_kev=cve_input.get("in_cisa_kev", False),
+            has_exploit_db=cve_input.get("has_exploit_db", False),
+            headline=cve_input.get("headline_pt", ""),
+            raw_payload=cve_input.get("raw", {})
+        )
+    else:
+        cve = cve_input
+
+    # Sanitização simplificada usando os atributos do DTO
+    cve_id_esc = escape_adaptive_card_markdown(cve.cve_id)
+    cvss_str = f"{cve.cvss_score:.1f}" if cve.cvss_score is not None else "N/A"
+    vendor_esc = escape_adaptive_card_markdown(cve.vendor.title())
+    product_esc = escape_adaptive_card_markdown(cve.product.title())
+    url_san = sanitize_url(cve.url)
+    date_str = cve.date[:10] if cve.date else "N/A"
+    headline_esc = escape_adaptive_card_markdown(cve.headline or f"Alerta de Segurança para {cve_id_esc}")
+    description_esc = escape_adaptive_card_markdown(cve.description)
     
-    # Sanitização
-    cve_id_esc = escape_adaptive_card_markdown(cve_id)
-    cvss_str = f"{cvss:.1f}" if cvss is not None else "N/A"
-    vendor_esc = escape_adaptive_card_markdown(vendor.title())
-    product_esc = escape_adaptive_card_markdown(product.title())
-    url_san = sanitize_url(url)
-    date_str = date[:10] if date else "N/A"
-    headline_esc = escape_adaptive_card_markdown(headline or f"Alerta de Segurança para {cve_id_esc}")
-    description_esc = escape_adaptive_card_markdown(description)
+    references = cve.raw_payload.get("references", [])
     
-    raw_data = cve.raw_payload if hasattr(cve, "raw_payload") else cve.get("raw", {})
-    references = raw_data.get("references", [])
-    
-    color = _SEVERITY_COLORS.get(risk_tag, "default")
+    color = _SEVERITY_COLORS.get(cve.risk_tag, "default")
 
     body = [
         build_header(f"🚨 Alerta de Segurança - {product_esc} ({cve_id_esc})", headline_esc, color=color)
@@ -69,10 +82,11 @@ def build_cve_card(cve: Any) -> dict[str, Any]:
 
     # Fatos principais
     body.append(build_fact_set([
+        ("Categoria", _CATEGORY_LABEL),
         ("Produto", product_esc),
         ("Vendor", vendor_esc),
         ("CVE", cve_id_esc),
-        ("Severidade", f"{risk_tag} | CVSS: {cvss_str}"),
+        ("Severidade", f"{cve.risk_tag} | CVSS: {cvss_str}"),
         ("Data de Divulgação", date_str),
     ]))
 
@@ -80,15 +94,15 @@ def build_cve_card(cve: Any) -> dict[str, Any]:
     full_desc = description_esc[:800]
     if url_san: full_desc += f"\n\n**Fonte:** [{url_san}]({url_san})"
     body.extend([
-        build_section_title("Descrição Técnica"),
+        build_section_title("Descrição"),
         {"type": "TextBlock", "text": full_desc, "wrap": True, "spacing": "Small", "size": "Small", "isSubtle": True}
     ])
 
     # Impacto de Clientes
-    if clients:
+    if cve.impacted_clients:
         body.append({
             "type": "Container", "style": "attention", "spacing": "Medium",
-            "items": [{"type": "TextBlock", "text": f"🎯 **Ativos Correspondentes:** {' | '.join(clients)}", "weight": "Bolder", "wrap": True, "size": "Small"}]
+            "items": [{"type": "TextBlock", "text": f"🎯 **Ativos Correspondentes:** {' | '.join(cve.impacted_clients)}", "weight": "Bolder", "wrap": True, "size": "Small"}]
         })
 
     # Referências
@@ -101,7 +115,7 @@ def build_cve_card(cve: Any) -> dict[str, Any]:
 
     actions = [{"type": "Action.OpenUrl", "title": "Consulte Fonte NVD", "url": url_san}] if url_san else None
     
-    logger.info("Card montado para CVE %s (%s)", cve_id_esc, risk_tag)
+    logger.info("Card montado para CVE %s (%s)", cve_id_esc, cve.risk_tag)
     return wrap_card(body, actions)
 
 def build_cve_telegram_message(cve: Any) -> str:

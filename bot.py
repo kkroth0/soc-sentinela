@@ -7,7 +7,7 @@ import signal
 import sys
 import time
 
-from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 
 import config
 from commands import command_handler
@@ -41,9 +41,9 @@ def main() -> None:
         Version: 1.0.0 | Status: Active Monitoring
         © 2026 @kkroth0 - Matheus Andrade
 
-══════════════════════════════════════════════════════════════════════
-✓ Sistema iniciado e pronto para monitoramento
-══════════════════════════════════════════════════════════════════════
+    logger.info("----------------------------------------------------------------------")
+    logger.info("v Sistema iniciado e pronto para monitoramento")
+    logger.info("----------------------------------------------------------------------")
     """
     for line in banner.splitlines():
         if line.strip():
@@ -86,7 +86,7 @@ def main() -> None:
     command_handler.start_server()
 
     # ── 4. Configurar scheduler ───────────────────────────────────────
-    scheduler = BlockingScheduler(timezone="UTC")
+    scheduler = BackgroundScheduler(timezone="UTC")
 
     scheduler.add_job(cve_pipeline.run, "interval", minutes=config.TIME_WINDOW_MINUTES, id="cve_pipeline", name="Pipeline CVE", max_instances=1, coalesce=True)
     scheduler.add_job(cti_pipeline.run, "interval", minutes=config.NEWS_TIME_WINDOW_MINUTES, id="cti_pipeline", name="Pipeline CTI", max_instances=1, coalesce=True)
@@ -103,10 +103,13 @@ def main() -> None:
     except Exception as exc:
         logger.error("Falha na carga inicial: %s", exc)
 
-    # ── 6. Iniciar scheduler (blocking) ───────────────────────────────
+    # ── 6. Iniciar scheduler (background) ─────────────────────────────
     logger.info("Scheduler iniciado — SOC Sentinel operacional ✅")
+    scheduler.start()
+
     try:
-        scheduler.start()
+        while True:
+            time.sleep(1)
     except (KeyboardInterrupt, SystemExit):
         _shutdown()
 

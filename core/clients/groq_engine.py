@@ -64,40 +64,57 @@ def ask_json(prompt: str, system_prompt: str, model: str = "llama-3.3-70b-versat
         logger.error("Erro na inferência/parsing Groq: %s", exc)
     return None
 
+def _apply_intelligence(item: dict[str, Any], prompt: str, field_map: dict[str, str], log_label: str) -> None:
+    """Helper genérico para aplicar inteligência artificial a um item (CVE ou Notícia)."""
+    # Verifica se já está processado (se o primeiro campo do field_map já existe)
+    first_field = list(field_map.keys())[0]
+    if item.get(first_field):
+        return
+
+    # Constrói o prompt concatenando os valores das chaves de entrada (field_map.values())
+    # No caso da Groq Engine, as chaves de entrada são passadas via prompt formatado
+    result = ask_json(prompt, log_label)
+    
+    if result:
+        for target_field, source_field in field_map.items():
+            item[target_field] = result.get(source_field, "")
+        logger.debug("Inteligência aplicada: %s", log_label[:40])
+    else:
+        # Fallback silencioso: garante campos vazios para não quebrar formatters
+        for target_field in field_map.keys():
+            item[target_field] = ""
+
 def process_cve_intelligence(cve: dict[str, Any]) -> None:
-    """Traduz e gera headline para uma CVE."""
+    """Traduz e gera headline para uma CVE (com fallback)."""
     cve_id = cve.get("cve_id", "N/A")
     description = cve.get("description", "")
+    cvss = cve.get("cvss_score", "N/A")
+    vendor = cve.get("vendor", "N/A")
+    product = cve.get("product", "N/A")
     
-    system_prompt = (
-        "Você é um analista de SOC sênior. Traduza a descrição da CVE para Português (Brasil) "
-        "mantendo o tom técnico. Além disso, crie um 'headline' curto e impactante (máx 80 caracteres). "
-        "Responda EXCLUSIVAMENTE em formato JSON: {'description_pt': '...', 'headline_pt': '...'}"
+    prompt = (
+        f"CVE ID: {cve_id}\n"
+        f"Fabricante: {vendor}\n"
+        f"Produto: {product}\n"
+        f"CVSS Score: {cvss}\n"
+        f"Descrição original (Inglês): {description}"
     )
-    
-    prompt = f"CVE: {cve_id}\nDescrição original: {description}"
-    
-    result = ask_json(prompt, system_prompt)
-    if result:
-        cve["description_pt"] = result.get("description_pt", "")
-        cve["headline_pt"] = result.get("headline_pt", "")
-        logger.debug("Inteligência aplicada à CVE %s", cve_id)
+    _apply_intelligence(
+        cve, 
+        prompt, 
+        {"description_pt": "description_pt", "headline_pt": "headline_pt"},
+        config.PROMPT_CVE_INTEL
+    )
 
 def process_news_intelligence(article: dict[str, Any]) -> None:
-    """Traduz e resume um artigo de notícia CTI."""
+    """Traduz e resume um artigo de notícia CTI (com fallback)."""
     title = article.get("title", "")
     summary = article.get("summary", "")
     
-    system_prompt = (
-        "Você é um analista de Cyber Threat Intelligence. Traduza o título e faça um resumo executivo "
-        "em Português (Brasil) para o artigo fornecido. O resumo deve ser objetivo e focado em impacto. "
-        "Responda EXCLUSIVAMENTE em formato JSON: {'title_pt': '...', 'summary_pt': '...'}"
-    )
-    
     prompt = f"Título: {title}\nResumo Original: {summary}"
-    
-    result = ask_json(prompt, system_prompt)
-    if result:
-        article["title_pt"] = result.get("title_pt", "")
-        article["summary_pt"] = result.get("summary_pt", "")
-        logger.debug("Inteligência aplicada à notícia: %s", title[:40])
+    _apply_intelligence(
+        article, 
+        prompt, 
+        {"title_pt": "title_pt", "summary_pt": "summary_pt"},
+        config.PROMPT_NEWS_INTEL
+    )

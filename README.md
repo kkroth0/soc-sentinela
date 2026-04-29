@@ -1,6 +1,6 @@
 # Threat Intelligence - SOC Sentinel
 
-SOC Sentinel é um motor de coleta e análise automatizada especializado em fontes de Threat Intelligence (CTI) e Vulnerability Management (CVE). Roda 24/7 como container Docker e entrega alertas acionáveis diretamente no Microsoft Teams e Telegram.
+SOC Sentinel é um motor de coleta e análise automatizada especializado em fontes de Threat Intelligence (CTI) e Vulnerability Management (CVE). Roda 24/7 como container Docker e entrega alertas acionáveis diretamente no Microsoft Teams e/ou Telegram.
 
 | Version | Status | Owner |
 |---------|--------|-------|

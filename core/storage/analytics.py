@@ -41,10 +41,15 @@ def get_report_stats(since: str, until: str) -> dict[str, Any]:
                     client_counts[c] = client_counts.get(c, 0) + 1
             top_clients = [{"client": c, "count": n} for c, n in sorted(client_counts.items(), key=lambda x: x[1], reverse=True)[:5]]
 
+            news_sources = conn.execute(
+                "SELECT source, COUNT(*) as total FROM sent_news WHERE sent_at >= ? AND sent_at < ? AND source != '' GROUP BY source ORDER BY total DESC LIMIT 5", (since, until)
+            ).fetchall()
+
             return {
                 "total_cves": cve_res["total"] or 0, "avg_cvss": cve_res["avg_cvss"] or 0.0, "total_news": news_res["total"] or 0,
                 "risk_distribution": {"CRITICAL": cve_res["critical"] or 0, "HIGH": cve_res["high"] or 0, "MEDIUM": cve_res["medium"] or 0, "LOW": cve_res["low"] or 0},
-                "top_vendors": [dict(r) for r in vendors], "top_products": [dict(r) for r in products], "top_clients": top_clients
+                "top_vendors": [dict(r) for r in vendors], "top_products": [dict(r) for r in products], "top_clients": top_clients,
+                "top_sources": [dict(r) for r in news_sources]
             }
         except Exception as exc:
             logger.error("Erro analítico: %s", exc)

@@ -15,10 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from reports.reporter import (
     _build_period_label,
     _calc_trend,
-    _get_week_range,
-    _get_previous_week_range,
-    _get_month_range,
-    _get_previous_month_range,
+    _get_date_range,
 )
 
 
@@ -81,7 +78,7 @@ class TestWeekRange:
         mock_dt.now.return_value = mock_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
-        period, start, end = _get_week_range()
+        period, start, end = _get_date_range("weekly", offset=0)
         assert "W" in period
         assert start < end
 
@@ -91,8 +88,8 @@ class TestWeekRange:
         mock_dt.now.return_value = mock_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
-        _, cur_start, _ = _get_week_range()
-        _, prev_start, _ = _get_previous_week_range()
+        _, cur_start, _ = _get_date_range("weekly", offset=0)
+        _, prev_start, _ = _get_date_range("weekly", offset=1)
         assert prev_start < cur_start
 
 
@@ -106,7 +103,7 @@ class TestMonthRange:
         mock_dt.now.return_value = mock_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
-        period, start, end = _get_month_range()
+        period, start, end = _get_date_range("monthly", offset=0)
         assert period == "2026-04"
 
     @patch("reports.reporter.datetime")
@@ -115,7 +112,7 @@ class TestMonthRange:
         mock_dt.now.return_value = mock_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
-        period, _, _ = _get_previous_month_range()
+        period, _, _ = _get_date_range("monthly", offset=1)
         assert period == "2026-03"
 
     @patch("reports.reporter.datetime")
@@ -124,5 +121,5 @@ class TestMonthRange:
         mock_dt.now.return_value = mock_now
         mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
 
-        period, _, _ = _get_month_range()
+        period, _, _ = _get_date_range("monthly", offset=0)
         assert period == "2025-12"

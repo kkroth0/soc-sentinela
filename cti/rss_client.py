@@ -29,7 +29,6 @@ RSS_FEEDS: list[dict[str, Any]] = [
     {"url": "https://www.microsoft.com/security/blog/feed/", "source": "Microsoft Security Blog", "layer": 1},
 
     # Layer 2: Breaking News & Disclosure Velocity (Novos sugeridos)
-    {"url": "https://arstechnica.com/security/feed", "source": "Ars Technica Security", "layer": 2},
     {"url": "https://www.bleepingcomputer.com/feed/", "source": "BleepingComputer", "layer": 2},
     {"url": "https://feeds.feedburner.com/TheHackersNews", "source": "TheHackerNews", "layer": 2},
     {"url": "https://feeds.feedburner.com/Securityweek", "source": "SecurityWeek", "layer": 2},
@@ -105,8 +104,9 @@ def _parse_feed(
         }
         resp = http_client.get(
             url, 
-            timeout=8, 
-            headers=headers
+            timeout=15, 
+            headers=headers,
+            use_retry=False
         )
         resp.raise_for_status()
         raw_xml = resp.content

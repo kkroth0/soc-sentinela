@@ -12,7 +12,7 @@ from core.logger import get_logger
 logger = get_logger("core.clients.teams_client")
 
 
-def send_card(card_payload: dict[str, Any], webhook_url: str | None = None) -> bool:
+def send_card(card_payload: dict[str, Any], webhook_url: str | None = None, category: str | None = None) -> bool:
     """
     Envia um Adaptive Card para o webhook do Teams.
     Retorna True se o envio foi bem-sucedido (HTTP 200), False caso contrário.
@@ -25,6 +25,7 @@ def send_card(card_payload: dict[str, Any], webhook_url: str | None = None) -> b
 
     envelope = {
         "type": "message",
+        "category": category,
         "attachments": [
             {
                 "contentType": "application/vnd.microsoft.card.adaptive",

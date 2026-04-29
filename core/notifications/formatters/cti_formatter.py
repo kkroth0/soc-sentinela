@@ -11,52 +11,53 @@ from core.logger import get_logger
 
 logger = get_logger("core.notifications.formatters.cti_formatter")
 
-_LAYER_LABELS: dict[int, str] = {
-    1: "🔴 CVE / Exploit DB",
-    2: "🟠 Vendor Advisory",
-    3: "🔵 Threat Intelligence",
-    4: "🟢 Radar Regional (BR/LATAM)",
-}
+_CATEGORY_LABEL = "🔵 Threat Intelligence"
 
 
 from core.notifications.formatters.component_factory import (
     build_header, build_fact_set, build_section_title, wrap_card
 )
 
-def build_news_card(news: Any) -> dict[str, Any]:
+from core.models import StandardCTINews
+
+def build_news_card(news_input: Any) -> dict[str, Any]:
     """Monta Adaptive Card para um artigo de notícia CTI com design Premium."""
-    # Suporte a objeto ou dicionário
-    title = news.title if hasattr(news, "title") else news.get("title_pt", news.get("title", "Sem título"))
-    summary = news.summary if hasattr(news, "summary") else news.get("summary_pt", news.get("summary", ""))
-    source = news.source if hasattr(news, "source") else news.get("source", "Desconhecido")
-    layer = news.layer if hasattr(news, "layer") else news.get("layer", 3)
-    url = news.url if hasattr(news, "url") else news.get("url", "")
-    date = news.date if hasattr(news, "date") else news.get("date", "")
-    clients = news.matched_assets if hasattr(news, "matched_assets") else news.get("impacted_clients", [])
+    # Garante que temos um objeto StandardCTINews (DTO)
+    if isinstance(news_input, dict):
+        news = StandardCTINews(
+            title=news_input.get("title_pt") or news_input.get("title", "Sem título"),
+            summary=news_input.get("summary_pt") or news_input.get("summary", ""),
+            source=news_input.get("source", "Desconhecido"),
+            layer=int(news_input.get("layer", 3)),
+            url=news_input.get("url", ""),
+            date=news_input.get("date", ""),
+            matched_assets=news_input.get("impacted_clients") or news_input.get("matched_assets", [])
+        )
+    else:
+        news = news_input
 
-    title_esc = escape_adaptive_card_markdown(title)
-    summary_esc = escape_adaptive_card_markdown(summary)
-    source_esc = escape_adaptive_card_markdown(source)
-    url_san = sanitize_url(url)
+    title_esc = escape_adaptive_card_markdown(news.title)
+    summary_esc = escape_adaptive_card_markdown(news.summary)
+    source_esc = escape_adaptive_card_markdown(news.source)
+    url_san = sanitize_url(news.url)
     
-    layer_label = _LAYER_LABELS.get(layer, "📰 Notícia")
-
     body = [
-        build_header(f"🚨 CTI Report - {title_esc}", layer_label, color="accent"),
+        build_header(f"🚨 CTI Report - {title_esc}", "", color="accent"),
         build_fact_set([
+            ("Categoria", _CATEGORY_LABEL),
             ("Fonte", source_esc),
-            ("Data", date[:10] if date else "N/A")
+            ("Data", news.date[:10] if news.date else "N/A")
         ])
     ]
 
-    if clients:
+    if news.matched_assets:
         body.append({
             "type": "Container",
             "style": "attention",
             "spacing": "Medium",
             "items": [{
                 "type": "TextBlock",
-                "text": f"🎯 **Ativos Correspondentes:** {' | '.join(clients)}",
+                "text": f"🎯 **Ativos Correspondentes:** {' | '.join(news.matched_assets)}",
                 "weight": "Bolder", "wrap": True, "size": "Small"
             }]
         })
@@ -65,7 +66,7 @@ def build_news_card(news: Any) -> dict[str, Any]:
         text = summary_esc[:800]
         if url_san: text += f"\n\n**Fonte:** [{url_san}]({url_san})"
         body.extend([
-            build_section_title("Resumo Profissional"),
+            build_section_title("Descrição"),
             {"type": "TextBlock", "text": text, "wrap": True, "spacing": "Small", "size": "Small", "isSubtle": True}
         ])
 
@@ -74,21 +75,28 @@ def build_news_card(news: Any) -> dict[str, Any]:
     logger.info("Card de notícia montado: %s (%s)", source_esc, title_esc[:40])
     return wrap_card(body, actions)
 
-def build_news_telegram_message(news: Any) -> str:
+def build_news_telegram_message(news_input: Any) -> str:
     """Monta a mensagem HTML para o Telegram escapando campos."""
-    # Suporte a objeto ou dicionário
-    title = news.title if hasattr(news, "title") else news.get("title_pt", news.get("title", "Sem título"))
-    summary = news.summary if hasattr(news, "summary") else news.get("summary_pt", news.get("summary", ""))
-    source = news.source if hasattr(news, "source") else news.get("source", "Desconhecido")
-    layer = news.layer if hasattr(news, "layer") else news.get("layer", 3)
-    url = news.url if hasattr(news, "url") else news.get("url", "")
+    # Garante que temos um objeto StandardCTINews (DTO)
+    if isinstance(news_input, dict):
+        news = StandardCTINews(
+            title=news_input.get("title_pt") or news_input.get("title", "Sem título"),
+            summary=news_input.get("summary_pt") or news_input.get("summary", ""),
+            source=news_input.get("source", "Desconhecido"),
+            layer=int(news_input.get("layer", 3)),
+            url=news_input.get("url", ""),
+            date=news_input.get("date", ""),
+            matched_assets=news_input.get("impacted_clients") or news_input.get("matched_assets", [])
+        )
+    else:
+        news = news_input
 
-    title = html.escape(title)
-    summary = html.escape(summary)
-    source = html.escape(source)
-    url = html.escape(url)
+    title = html.escape(news.title)
+    summary = html.escape(news.summary)
+    source = html.escape(news.source)
+    url = html.escape(news.url)
 
-    layer_label = _LAYER_LABELS.get(layer, "📰 Notícia")
+    layer_label = _LAYER_LABELS.get(news.layer, "📰 Notícia")
 
     msg = f"<b>{layer_label}</b>\n\n"
     msg += f"<b>{title}</b>\n\n"

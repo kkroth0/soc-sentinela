@@ -55,6 +55,9 @@ ASSETS_CACHE_PATH: str = os.path.abspath(
 VENDOR_ALIASES_PATH: str = os.path.abspath(
     os.path.join(BASE_DIR, "data", "vendor_aliases.json")
 )
+CTI_CATEGORIES_PATH: str = os.path.abspath(
+    os.path.join(BASE_DIR, "data", "cti_categories.json")
+)
 
 # ─── Servidor de comandos ────────────────────────────────────────────
 COMMAND_PORT: int = int(os.getenv("COMMAND_PORT", "8765"))
@@ -69,6 +72,34 @@ GRAPH_BASE_URL: str = "https://graph.microsoft.com/v1.0"
 GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
 GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# ─── Prompts de IA ──────────────────────────────────────────────────
+PROMPT_CVE_INTEL: str = (
+    "Você é um analista de SOC sênior. Sua tarefa é transformar a descrição técnica de uma CVE "
+    "em um texto explicativo estruturado em Português (Brasil) para um relatório executivo. "
+    "\n\nESTRUTURA DESEJADA:\n"
+    "1º Parágrafo: [Fabricante] lançou atualizações para corrigir a vulnerabilidade [CVE_ID] no [Produto], "
+    "com pontuação CVSS [Score]. Explique a causa da falha e o impacto direto (ex: elevação de privilégio, RCE).\n"
+    "2º Parágrafo: Detalhe o escopo do problema (versões afetadas, sistemas operacionais específicos) "
+    "e o que a exploração permite tecnicamente (ex: falsificação de tokens, acesso a arquivos).\n"
+    "\nREGRAS:\n"
+    "- Mantenha o rigor técnico, mas seja claro e objetivo.\n"
+    "- PRESERVE termos técnicos e jargões de cibersegurança no original em Inglês (ex: Race Condition, Buffer Overflow, Bypass, Payload, Heap Spraying, etc).\n"
+    "- Responda EXCLUSIVAMENTE em formato JSON: {'description_pt': 'texto_explicativo', 'headline_pt': 'título_curto'}\n"
+    "- O 'headline_pt' deve ter no máximo 80 caracteres."
+)
+
+PROMPT_NEWS_INTEL: str = (
+    "Você é um analista de Cyber Threat Intelligence focado em resumos técnicos rápidos. "
+    "Traduza o título e faça um resumo executivo em Português (Brasil) para o artigo fornecido.\n\n"
+    "REGRAS CRÍTICAS:\n"
+    "1. Resumo estritamente factual. NÃO invente nomes de grupos, TTPs ou conclusões.\n"
+    "2. PROIBIDO frases como 'É importante que...', 'As organizações devem...', ou explicar o que são siglas (ex: não explique o que é TTP).\n"
+    "3. Se o texto original não menciona Zero-day ou Spear Phishing, NÃO use esses termos.\n\n"
+    "EXEMPLO RUIM (NÃO FAÇA): 'Nova campanha de malware. É fundamental estar atento aos TTPs para conter incidentes.'\n"
+    "EXEMPLO BOM (FAÇA): 'Campanha de phishing detectada visando o setor bancário brasileiro via arquivos .zip maliciosos.'\n\n"
+    "Responda EXCLUSIVAMENTE em formato JSON: {'title_pt': '...', 'summary_pt': '...'}"
+)
 
 
 def validate_config() -> None:
