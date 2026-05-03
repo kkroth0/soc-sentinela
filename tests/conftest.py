@@ -30,7 +30,6 @@ def sample_cve() -> dict:
         "in_cisa_kev": False,
         "risk_tag": None,
         "impacted_clients": [],
-        "translated": False,
     }
 
 
@@ -50,7 +49,6 @@ def sample_cve_low() -> dict:
         "in_cisa_kev": False,
         "risk_tag": None,
         "impacted_clients": [],
-        "translated": False,
     }
 
 
@@ -70,7 +68,6 @@ def sample_cve_blacklisted() -> dict:
         "in_cisa_kev": False,
         "risk_tag": None,
         "impacted_clients": [],
-        "translated": False,
     }
 
 

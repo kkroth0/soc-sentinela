@@ -45,6 +45,7 @@ MIN_CVSS_SCORE: float = float(os.getenv("MIN_CVSS_SCORE", "2.0"))
 TIME_WINDOW_MINUTES: int = int(os.getenv("TIME_WINDOW_MINUTES", "5"))
 NEWS_TIME_WINDOW_MINUTES: int = int(os.getenv("NEWS_TIME_WINDOW_MINUTES", "60"))
 CISA_KEV_CACHE_HOURS: int = int(os.getenv("CISA_KEV_CACHE_HOURS", "24"))
+MAX_CVE_AGE_DAYS: int = int(os.getenv("MAX_CVE_AGE_DAYS", "30"))
 
 # ─── Caminhos de arquivo — sempre absolutos ──────────────────────────
 BOT_DB_PATH: str = os.path.abspath(

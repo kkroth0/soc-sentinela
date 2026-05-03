@@ -139,11 +139,12 @@ def _parse_entry(
     cutoff: datetime,
 ) -> dict[str, Any] | None:
     """Normaliza uma entrada RSS em estrutura interna."""
-    # Data de publicação (Parse resiliente via time.mktime)
+    # Data de publicação (Parse resiliente via calendar.timegm)
     import time
+    import calendar
     published = entry.get("published_parsed") or entry.get("updated_parsed")
     if published:
-        pub_date = datetime.fromtimestamp(time.mktime(published), tz=timezone.utc)
+        pub_date = datetime.fromtimestamp(calendar.timegm(published), tz=timezone.utc)
         if pub_date < cutoff:
             return None
     else:
@@ -183,5 +184,4 @@ def _parse_entry(
         "source": source,
         "layer": layer,
         "date": pub_date.isoformat(),
-        "translated": False,
     }
