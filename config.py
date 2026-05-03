@@ -23,7 +23,8 @@ TEAMS_WEBHOOK_CVE: str = os.getenv("TEAMS_WEBHOOK_CVE", "")
 TEAMS_WEBHOOK_CTI: str = os.getenv("TEAMS_WEBHOOK_CTI", "")
 TEAMS_WEBHOOK_SECRET: str = os.getenv("TEAMS_WEBHOOK_SECRET", "")
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_CHAT_ID_CVE: str = os.getenv("TELEGRAM_CHAT_ID_CVE", "")
+TELEGRAM_CHAT_ID_CTI: str = os.getenv("TELEGRAM_CHAT_ID_CTI", "")
 
 # ─── Microsoft Graph API (SharePoint) ────────────────────────────────
 GRAPH_TENANT_ID: str = os.getenv("GRAPH_TENANT_ID", "")
@@ -91,14 +92,14 @@ PROMPT_CVE_INTEL: str = (
 
 PROMPT_NEWS_INTEL: str = (
     "Você é um analista de Cyber Threat Intelligence focado em resumos técnicos rápidos. "
-    "Traduza o título e faça um resumo executivo em Português (Brasil) para o artigo fornecido.\n\n"
+    "Traduza o título e faça um resumo executivo em Português (Brasil) seguindo a REGRA DE 2 PARÁGRAFOS.\n\n"
+    "REGRA DE 2 PARÁGRAFOS:\n"
+    "Parágrafo 1: Descrição detalhada do que foi descoberto (ameaça, vulnerabilidade, campanha).\n"
+    "Parágrafo 2: Impacto e ações recomendadas — quem é afetado e o que deve ser feito (correção, mitigação).\n\n"
     "REGRAS CRÍTICAS:\n"
     "1. Resumo estritamente factual. NÃO invente nomes de grupos, TTPs ou conclusões.\n"
-    "2. PROIBIDO frases como 'É importante que...', 'As organizações devem...', ou explicar o que são siglas (ex: não explique o que é TTP).\n"
-    "3. Se o texto original não menciona Zero-day ou Spear Phishing, NÃO use esses termos.\n\n"
-    "EXEMPLO RUIM (NÃO FAÇA): 'Nova campanha de malware. É fundamental estar atento aos TTPs para conter incidentes.'\n"
-    "EXEMPLO BOM (FAÇA): 'Campanha de phishing detectada visando o setor bancário brasileiro via arquivos .zip maliciosos.'\n\n"
-    "Responda EXCLUSIVAMENTE em formato JSON: {'title_pt': '...', 'summary_pt': '...'}"
+    "2. PROIBIDO frases como 'É importante que...', 'As organizações devem...', ou explicar o que são siglas.\n"
+    "3. Responda EXCLUSIVAMENTE em formato JSON: {'title_pt': '...', 'summary_pt': '...'}"
 )
 
 
@@ -108,10 +109,12 @@ def validate_config() -> None:
     if not GROQ_API_KEY:
         raise ValueError("ERRO CRÍTICO: GROQ_API_KEY ausente no .env")
 
-    # Precisamos de pelo menos UM webhook do Teams para alertas
+    # Precisamos de pelo menos UM notificador configurado (Teams ou Telegram)
     has_teams = any([TEAMS_WEBHOOK_URL, TEAMS_WEBHOOK_CVE, TEAMS_WEBHOOK_CTI])
-    if not has_teams:
-        raise ValueError("ERRO CRÍTICO: Nenhum Webhook do Teams configurado (TEAMS_WEBHOOK_URL, _CVE ou _CTI)")
+    has_telegram = all([TELEGRAM_BOT_TOKEN, any([TELEGRAM_CHAT_ID_CVE, TELEGRAM_CHAT_ID_CTI])])
+    
+    if not has_teams and not has_telegram:
+        raise ValueError("ERRO CRÍTICO: Nenhum canal de notificação configurado (Teams ou Telegram)")
     
     if not TEAMS_WEBHOOK_SECRET:
         from core.logger import get_logger

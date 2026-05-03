@@ -49,6 +49,11 @@ def _process_single_article(
 
         logger.info("Artigo APROVADO (Score: %d) — %s [Motivos: %s]", score, title, ", ".join(reasons))
 
+        # Deep Fetch
+        if not article.get("full_content"):
+            from cti.scrapling_client import fetch_full_content
+            article["full_content"] = fetch_full_content(url)
+
         # Processamento ÚNICO de IA (Tradução + Resumo) via motor unificado
         groq_engine.process_news_intelligence(article)
 

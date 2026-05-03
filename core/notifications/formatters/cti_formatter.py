@@ -102,7 +102,7 @@ def build_news_telegram_message(news_input: Any) -> str:
     msg += f"<b>{title}</b>\n\n"
     msg += f"<b>Fonte:</b> {source}\n\n"
     if summary:
-        msg += f"{summary[:400]}\n\n"
+        msg += f"{summary[:3000]}\n\n"
 
     if url:
         msg += f"<a href='{url}'>Ler artigo completo</a>"

@@ -7,7 +7,7 @@ def build_dispatcher() -> NotificationDispatcher:
     notifiers = []
     if config.TEAMS_WEBHOOK_URL:
         notifiers.append(TeamsNotifier())
-    if config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID:
+    if config.TELEGRAM_BOT_TOKEN and (config.TELEGRAM_CHAT_ID_CVE or config.TELEGRAM_CHAT_ID_CTI):
         notifiers.append(TelegramNotifier())
     return NotificationDispatcher(notifiers=notifiers)
 

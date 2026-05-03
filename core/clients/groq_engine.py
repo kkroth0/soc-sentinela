@@ -109,9 +109,13 @@ def process_cve_intelligence(cve: dict[str, Any]) -> None:
 def process_news_intelligence(article: dict[str, Any]) -> None:
     """Traduz e resume um artigo de notícia CTI (com fallback)."""
     title = article.get("title", "")
-    summary = article.get("summary", "")
+    # Prioridade: full_content (raspado pelo Scrapling) > summary (RSS)
+    content = article.get("full_content") or article.get("summary", "")
     
-    prompt = f"Título: {title}\nResumo Original: {summary}"
+    # Truncamento de segurança para maior contexto (aprox 6k chars)
+    truncated_content = content[:6000]
+    
+    prompt = f"Título: {title}\nConteúdo Original: {truncated_content}"
     _apply_intelligence(
         article, 
         prompt, 

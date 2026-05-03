@@ -166,18 +166,13 @@ def _parse_entry(
         summary = re.sub(r"<[^>]+>", "", summary)
     summary = html.unescape(summary or "").strip()
 
-    # Fallback Crawler Otimizado: Se o RSS vier vazio, pega a meta description
+    # Fallback via Scrapling: Se o RSS vier vazio, tenta uma raspagem rápida do conteúdo completo
     if not summary and link:
         try:
-            # Baixa apenas os primeiros 10KB (onde ficam as meta tags) para economizar banda
-            with http_client.get_session().get(link, timeout=3, stream=True) as resp:
-                if resp.status_code == 200:
-                    chunk = resp.raw.read(10240).decode('utf-8', errors='ignore')
-                    m = re.search(r'<meta[^>]*?content=["\']([^"\']+)["\'][^>]*?name=["\']description["\']', chunk, re.I)
-                    if not m:
-                         m = re.search(r'<meta[^>]*?name=["\']description["\']?.*?content=["\']([^"\']+)["\']', chunk, re.I)
-                    if m:
-                        summary = html.unescape(m.group(1)).strip()
+            from cti.scrapling_client import fetch_full_content
+            # Como estamos dentro de um ThreadPoolExecutor, o bloqueio do Playwright (se disparado)
+            # não vai travar o pipeline inteiro.
+            summary = fetch_full_content(link)
         except Exception:
             pass
 
