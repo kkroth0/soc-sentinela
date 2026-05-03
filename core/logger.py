@@ -24,11 +24,26 @@ def _setup_root_logger() -> None:
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
 
+    # 1. Console Handler
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(log_level)
     console_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT))
-
     root.addHandler(console_handler)
+
+    # 2. Rotating File Handler (Logs em disco com rotação para não encher o HD)
+    try:
+        log_dir = os.path.join(config.BASE_DIR, "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "sentinel.log")
+        
+        from logging.handlers import RotatingFileHandler
+        file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding="utf-8")
+        file_handler.setLevel(log_level)
+        file_handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT))
+        root.addHandler(file_handler)
+    except Exception as exc:
+        print(f"Erro ao inicializar log em arquivo: {exc}")
+
     _INITIALIZED = True
 
 

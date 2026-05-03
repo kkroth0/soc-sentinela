@@ -31,94 +31,88 @@ def _compute_file_hash(filepath: str) -> str:
     return sha256.hexdigest()
 
 
+def _parse_sheet(ws: Any, required_headers: list[str]) -> list[dict[str, Any]]:
+    """Helper genérico para processar linhas de uma planilha com mapeamento de colunas."""
+    rows = ws.iter_rows(values_only=True)
+    try:
+        header_row = next(rows)
+        headers = [str(h).lower().strip() if h else "" for h in header_row]
+    except StopIteration:
+        return []
+
+    # Mapeia onde cada coluna está
+    col_map = {h: headers.index(h) for h in required_headers if h in headers}
+    
+    # Se faltar alguma coluna obrigatória, tenta o mapeamento por índice padrão como fallback
+    for i, h in enumerate(required_headers):
+        if h not in col_map:
+            col_map[h] = i
+
+    data_rows = []
+    from core.utils.security import sanitize_csv_value
+
+    for row in rows:
+        r = list(row) if row else []
+        if not r or not any(r): continue  # Pula linhas completamente vazias
+        
+        item = {}
+        has_content = False
+        for h in required_headers:
+            idx = col_map[h]
+            val = r[idx] if idx < len(r) else ""
+            cleaned = sanitize_csv_value(str(val).strip()) if val is not None else ""
+            item[h] = cleaned
+            if cleaned: has_content = True
+        
+        if has_content:
+            data_rows.append(item)
+    return data_rows
+
+
 def _load_excel(filepath: str) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
     """
-    Lê o Excel e retorna (asset_map, blacklist) dinamicamente.
+    Lê o Excel e retorna (asset_map, blacklist) de forma unificada.
     """
     wb = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
     asset_map: dict[str, dict[str, Any]] = {}
     blacklist: list[dict[str, Any]] = []
 
-    # ── Assets sheet ──────────────────────────────────────────────────
+    # 1. Processar Ativos
     if "Assets" in wb.sheetnames:
-        ws = wb["Assets"]
-        rows = ws.iter_rows(values_only=True)
-        try:
-            headers = [str(h).lower().strip() if h else "" for h in next(rows)]
-        except StopIteration:
-            headers = []
-            
-        if not all(h in headers for h in ["client", "vendor", "product"]):
-            logger.warning("Cabeçalhos críticos ausentes no Excel (esperado: client, vendor, product). Usando índices padrão (0, 1, 2).")
+        asset_rows = _parse_sheet(wb["Assets"], ["client", "vendor", "product", "aliases"])
+        for row in asset_rows:
+            client = row["client"]
+            vendor = row["vendor"].lower()
+            product = row["product"].lower()
+            raw_aliases = row["aliases"].lower()
+            aliases = [a.strip() for a in raw_aliases.split(",") if a.strip()]
 
-        c_idx = headers.index("client") if "client" in headers else 0
-        v_idx = headers.index("vendor") if "vendor" in headers else 1
-        p_idx = headers.index("product") if "product" in headers else 2
-        a_idx = headers.index("aliases") if "aliases" in headers else -1
-
-        from core.utils.security import sanitize_csv_value
-        
-        for row in rows:
-            r = list(row) if row else []
-            if len(r) <= max(c_idx, v_idx, p_idx) or not r[c_idx]:
-                continue
-                
-            client = sanitize_csv_value(str(r[c_idx]).strip())
-            vendor = sanitize_csv_value(str(r[v_idx]).strip().lower()) if r[v_idx] else ""
-            product = sanitize_csv_value(str(r[p_idx]).strip().lower()) if r[p_idx] else ""
-            raw_aliases = str(r[a_idx]).strip().lower() if a_idx >= 0 and len(r) > a_idx and r[a_idx] else ""
-            aliases = [sanitize_csv_value(a.strip()) for a in raw_aliases.split(",") if a.strip()]
-
-            if vendor:
+            if client and vendor:
                 key = f"{vendor}:{product}"
                 if key not in asset_map:
-                    asset_map[key] = {"clients": [], "aliases": aliases}
+                    asset_map[key] = {"clients": [], "aliases": []}
                 if client not in asset_map[key]["clients"]:
                     asset_map[key]["clients"].append(client)
-                # Mescla novos aliases, se houver
-                for alias in aliases:
-                    if alias not in asset_map[key]["aliases"]:
-                        asset_map[key]["aliases"].append(alias)
+                for a in aliases:
+                    if a not in asset_map[key]["aliases"]:
+                        asset_map[key]["aliases"].append(a)
     else:
-        logger.warning("Sheet 'Assets' não encontrada no Excel")
+        logger.warning("Aba 'Assets' não encontrada no Excel.")
 
-    # ── Blacklist sheet ───────────────────────────────────────────────
+    # 2. Processar Blacklist
     if "Blacklist" in wb.sheetnames:
-        ws = wb["Blacklist"]
-        rows = ws.iter_rows(values_only=True)
-        try:
-            headers = [str(h).lower().strip() if h else "" for h in next(rows)]
-        except StopIteration:
-            headers = []
-            
-        v_idx = headers.index("vendor") if "vendor" in headers else 0
-        p_idx = headers.index("product") if "product" in headers else 1
-        a_idx = headers.index("aliases") if "aliases" in headers else -1
-
-        for row in rows:
-            r = list(row) if row else []
-            if not r:
-                continue
-            
-            vendor = str(r[v_idx]).strip().lower() if len(r) > v_idx and r[v_idx] else ""
-            product = str(r[p_idx]).strip().lower() if len(r) > p_idx and r[p_idx] else ""
-            aliases_str = str(r[a_idx]).strip().lower() if a_idx >= 0 and len(r) > a_idx and r[a_idx] else ""
-            aliases = [a.strip() for a in aliases_str.split(",") if a.strip()]
-
+        bl_rows = _parse_sheet(wb["Blacklist"], ["vendor", "product", "aliases"])
+        for row in bl_rows:
+            product = row["product"].lower()
             if product:
                 blacklist.append({
-                    "vendor": vendor,
+                    "vendor": row["vendor"].lower(),
                     "product": product,
-                    "aliases": aliases
+                    "aliases": [a.strip() for a in row["aliases"].lower().split(",") if a.strip()]
                 })
-    else:
-        logger.info("Sheet 'Blacklist' não encontrada — blacklist vazia")
-
+    
     wb.close()
-    logger.info(
-        "Excel carregado: %d chaves no asset_map, %d itens na blacklist",
-        len(asset_map), len(blacklist),
-    )
+    logger.info("Excel carregado: %d ativos, %d itens na blacklist", len(asset_map), len(blacklist))
     return asset_map, blacklist
 
 

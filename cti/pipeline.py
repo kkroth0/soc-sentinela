@@ -19,22 +19,27 @@ from cti.scorer import score_article
 logger = get_logger("cti.pipeline")
 
 
+from cti.scrapling_client import scrapling_client
+from core.clients.scrapers import BaseScraper
+
 def _process_single_article(
     article: dict[str, Any], 
     asset_map: dict[str, dict[str, Any]],
-    notifier: BaseNotifier
+    notifier: BaseNotifier,
+    db_module: Any = storage,
+    scraper: BaseScraper = scrapling_client
 ) -> tuple[bool, str]:
     """Processa um único artigo: deduplica, traduz, formata, envia."""
     url = article.get("url", "")
     title = article.get("title", "?")[:40]
 
-    # Deduplicação
-    if storage.is_news_sent(url):
+    # Deduplicação via interface de storage injetada
+    if db_module.is_news_sent(url):
         logger.debug("Artigo já enviado: %s", url)
         return False, "já enviado"
 
     # Lock em memória para evitar processamento paralelo da mesma URL
-    if not storage.acquire_news_lock(url):
+    if not db_module.acquire_news_lock(url):
         logger.debug("Artigo já em processamento: %s", url)
         return False, "em processamento"
 
@@ -43,16 +48,14 @@ def _process_single_article(
         score, reasons = score_article(article, asset_map)
         if score < 50:
             logger.debug("Artigo ignorado (Score: %d) — %s", score, title)
-            # Salvar como SKIPPED para evitar repetição nos logs
-            storage.save_news(article, status="SKIPPED")
+            db_module.save_news(article, status="SKIPPED")
             return False, f"Score insuficiente ({score}): {', '.join(reasons)}"
 
         logger.info("Artigo APROVADO (Score: %d) — %s [Motivos: %s]", score, title, ", ".join(reasons))
 
-        # Deep Fetch
+        # Deep Fetch via Scraper injetado
         if not article.get("full_content"):
-            from cti.scrapling_client import fetch_full_content
-            article["full_content"] = fetch_full_content(url)
+            article["full_content"] = scraper.fetch_content(url)
 
         # Processamento ÚNICO de IA (Tradução + Resumo) via motor unificado
         groq_engine.process_news_intelligence(article)
@@ -64,27 +67,31 @@ def _process_single_article(
             source=article.get("source", ""),
             layer=int(article.get("layer", 0)),
             summary=article.get("summary_pt") or article.get("summary", ""),
-            date=article.get("date", "")
+            date=article.get("date", ""),
+            iocs=article.get("iocs", "")
         )
         
-        # Envio via notificador injetado (Desacoplamento)
+        # Envio via notificador injetado
         success = notifier.send_cti_news(news)
 
         if success:
-            storage.save_news(article)
+            db_module.save_news(article)
             logger.info("Artigo enviado: %s", article.get("title", "?")[:60])
             return True, "enviado com sucesso"
         else:
             logger.error("Falha ao enviar artigo: %s", url)
             return False, "falha no envio"
     finally:
-        storage.release_news_lock(url)
+        db_module.release_news_lock(url)
 
 
-def run(notifier: BaseNotifier = global_dispatcher) -> dict[str, int]:
+def run(
+    notifier: BaseNotifier = global_dispatcher, 
+    db_module: Any = storage,
+    scraper: BaseScraper = scrapling_client
+) -> dict[str, int]:
     """
-    Executa o pipeline CTI completo.
-    Injeta o notifier (default: global_dispatcher) para facilitar testes.
+    Executa o pipeline CTI completo com injeção de dependências.
     """
     logger.info("--- Pipeline CTI iniciado ---")
     stats = {"total": 0, "sent": 0, "skipped": 0, "errors": 0}
@@ -96,10 +103,10 @@ def run(notifier: BaseNotifier = global_dispatcher) -> dict[str, int]:
         stats["total"] = len(articles)
         logger.info("RSS retornou %d artigos", len(articles))
 
-        # Otimização: Processamento paralelo para análise de notícias via IA
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        # Otimização para VPS: Baixa concorrência (2 workers) para poupar RAM e CPU
+        with ThreadPoolExecutor(max_workers=2) as executor:
             future_to_article = {
-                executor.submit(_process_single_article, article, asset_map, notifier): article 
+                executor.submit(_process_single_article, article, asset_map, notifier, db_module, scraper): article 
                 for article in articles
             }
             
@@ -116,16 +123,24 @@ def run(notifier: BaseNotifier = global_dispatcher) -> dict[str, int]:
                         skipped_reasons[url] = {"title": title, "reason": reason}
                 except Exception as exc:
                     stats["errors"] += 1
-                    logger.error("Erro ao processar artigo '%s': %s", title, exc)
+                    logger.error("Erro ao processar notícia '%s': %s", title, exc)
                     skipped_reasons[url] = {"title": title, "reason": f"erro na execução: {exc}"}
 
     except Exception as exc:
         logger.error("Erro fatal no pipeline CTI: %s", exc)
 
     if skipped_reasons:
-        logger.info("Resumo dos artigos não enviados:")
+        logger.info("Resumo das notícias ignoradas ou com erro:")
         for url, data in skipped_reasons.items():
             logger.info("  - [%s] %s: %s", url[:30] + "...", data["title"], data["reason"])
+
+    # --- Rotina de Housekeeping (Faxina do Banco) ---
+    try:
+        cleaned_count = db_module.cleanup_old_data(days=90)
+        if cleaned_count > 0:
+            logger.info("Faxina concluída: %d registros antigos removidos do banco.", cleaned_count)
+    except Exception as exc:
+        logger.warning("Falha na rotina de housekeeping: %s", exc)
 
     logger.info(
         "--- Pipeline CTI finalizado — total=%d enviados=%d skip=%d erros=%d ---",

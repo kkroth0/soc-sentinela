@@ -90,24 +90,31 @@ def build_cve_card(cve_input: Any) -> dict[str, Any]:
         ("Data de Divulgação", date_str),
     ]))
 
-    # Descrição
-    full_desc = description_esc[:800]
-    if url_san: full_desc += f"\n\n**Fonte:** [{url_san}]({url_san})"
-    body.extend([
-        build_section_title("Descrição"),
-        {"type": "TextBlock", "text": full_desc, "wrap": True, "spacing": "Small", "size": "Small", "isSubtle": True}
-    ])
+    # Descrição separada em parágrafos (IA gera 2 parágrafos)
+    paragraphs = [p.strip() for p in description_esc.split("\n\n") if p.strip()]
+    if len(paragraphs) >= 2:
+        body.extend([
+            build_section_title("📝 Resumo Profissional"),
+            {"type": "TextBlock", "text": paragraphs[0], "wrap": True, "spacing": "Small", "size": "Small", "isSubtle": True},
+            build_section_title("🔍 Escopo e Impacto Técnico"),
+            {"type": "TextBlock", "text": paragraphs[1], "wrap": True, "spacing": "Small", "size": "Small", "isSubtle": True}
+        ])
+    else:
+        body.extend([
+            build_section_title("📝 Descrição Técnica"),
+            {"type": "TextBlock", "text": description_esc, "wrap": True, "spacing": "Small", "size": "Small", "isSubtle": True}
+        ])
 
     # Impacto de Clientes
     if cve.impacted_clients:
         body.append({
-            "type": "Container", "style": "attention", "spacing": "Medium",
+            "type": "Container", "style": "emphasis", "spacing": "Medium",
             "items": [{"type": "TextBlock", "text": f"🎯 **Ativos Correspondentes:** {' | '.join(cve.impacted_clients)}", "weight": "Bolder", "wrap": True, "size": "Small"}]
         })
 
     # Referências
     if references:
-        body.append(build_section_title("Referências e Mitigação"))
+        body.append(build_section_title("🌐 Referências Oficiais"))
         for ref in references[:3]:
             ref_url = ref.get("url", "")
             if ref_url:
@@ -119,7 +126,39 @@ def build_cve_card(cve_input: Any) -> dict[str, Any]:
     return wrap_card(body, actions)
 
 def build_cve_telegram_message(cve: Any) -> str:
-    """Mantém compatibilidade com Telegram."""
-    # ... lógica simplificada para Telegram ...
-    cve_id = cve.cve_id if hasattr(cve, "cve_id") else cve.get("cve_id", "N/A")
-    return f"🚨 <b>Alerta CVE: {cve_id}</b>"
+    """Monta mensagem rica para o Telegram."""
+    import html
+    
+    cve_id = html.escape(cve.cve_id)
+    cvss = f"{cve.cvss_score:.1f}" if cve.cvss_score is not None else "N/A"
+    vendor = html.escape(cve.vendor.upper())
+    product = html.escape(cve.product.upper())
+    headline = html.escape(cve.headline or f"Alerta de Segurança {cve_id}")
+    description = html.escape(cve.description)
+    url = html.escape(cve.url)
+    
+    # Emojis de severidade
+    severity_map = {"CRITICAL": "🔴 CRÍTICA", "HIGH": "🟠 ALTA", "MEDIUM": "🟡 MÉDIA", "LOW": "🟢 BAIXA"}
+    sev_label = severity_map.get(cve.risk_tag, f"⚪ {cve.risk_tag}")
+    
+    msg = f"🔥 <b>{headline}</b>\n"
+    msg += f"━━━━━━━━━━━━━━\n"
+    msg += f"🆔 <b>CVE:</b> {cve_id}\n"
+    msg += f"📊 <b>Risco:</b> {sev_label} (CVSS {cvss})\n"
+    msg += f"🏢 <b>Vendor:</b> {vendor}\n"
+    msg += f"📦 <b>Produto:</b> {product}\n\n"
+    
+    paragraphs = [p.strip() for p in description.split("\n\n") if p.strip()]
+    if len(paragraphs) >= 2:
+        msg += f"📝 <b>RESUMO</b>\n{paragraphs[0]}\n\n"
+        msg += f"🔍 <b>IMPACTO TÉCNICO</b>\n{paragraphs[1]}\n\n"
+    else:
+        msg += f"📝 <b>DESCRIÇÃO</b>\n{description}\n\n"
+        
+    if cve.impacted_clients:
+        msg += f"🎯 <b>ATIVOS:</b> <code>{', '.join(cve.impacted_clients)}</code>\n\n"
+        
+    if url:
+        msg += f"🔗 <a href='{url}'>Ver detalhes na NVD</a>"
+        
+    return msg

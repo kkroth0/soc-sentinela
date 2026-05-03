@@ -105,9 +105,9 @@ def main() -> None:
         logger.error("Falha na carga inicial: %s", exc)
 
     # ── 6. Iniciar scheduler (background) ─────────────────────────────
-    logger.info("Scheduler iniciado — Pipelines CVE e CTI despachados em paralelo ✅")
+    logger.info("Scheduler iniciado — Pipelines CVE e CTI despachados ✅")
     scheduler.start()
-
+    
     try:
         while True:
             time.sleep(1)

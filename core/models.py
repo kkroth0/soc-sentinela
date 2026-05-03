@@ -31,3 +31,4 @@ class StandardCTINews:
     summary: str
     date: str
     matched_assets: list[str] = field(default_factory=list)
+    iocs: str = ""

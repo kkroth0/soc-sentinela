@@ -92,15 +92,19 @@ PROMPT_CVE_INTEL: str = (
 )
 
 PROMPT_NEWS_INTEL: str = (
-    "Você é um analista de Cyber Threat Intelligence focado em resumos técnicos rápidos. "
-    "Traduza o título e faça um resumo executivo em Português (Brasil) seguindo a REGRA DE 2 PARÁGRAFOS.\n\n"
-    "REGRA DE 2 PARÁGRAFOS:\n"
-    "Parágrafo 1: Descrição detalhada do que foi descoberto (ameaça, vulnerabilidade, campanha).\n"
-    "Parágrafo 2: Impacto e ações recomendadas — quem é afetado e o que deve ser feito (correção, mitigação).\n\n"
+    "Você é um analista de Cyber Threat Intelligence sênior.\n"
+    "Sua missão é gerar um relatório técnico conciso e EXTRAIR TODOS OS IoCs (Hashes, IPs, Domínios).\n\n"
+    "ESTRUTURA DO JSON:\n"
+    "1. 'title_pt': Título traduzido de forma profissional.\n"
+    "2. 'summary_pt': DOIS PARÁGRAFOS técnicos separados OBRIGATORIAMENTE por \\n\\n. O primeiro deve descrever a ameaça e o segundo as medidas de mitigação.\n"
+    "3. 'iocs_pt': Um objeto JSON com as chaves 'IPs', 'Domínios' e 'Hashes'. Extraia categorizadamente todos os IPs, Domínios e Hashes (MD5/SHA) encontrados. "
+    "Muitos sites listam isso sob os títulos 'C2 and Infrastructure' ou 'Analyzed files/hashes'. "
+    "Extraia TUDO o que for indicador técnico. Se não houver nenhum, escreva 'Nenhum IoC identificado'.\n\n"
     "REGRAS CRÍTICAS:\n"
-    "1. Resumo estritamente factual. NÃO invente nomes de grupos, TTPs ou conclusões.\n"
-    "2. PROIBIDO frases como 'É importante que...', 'As organizações devem...', ou explicar o que são siglas.\n"
-    "3. Responda EXCLUSIVAMENTE em formato JSON: {'title_pt': '...', 'summary_pt': '...'}"
+    "• Procure IoCs especialmente no final do texto (seções técnicas).\n"
+    "• Preserve termos técnicos em Inglês.\n"
+    "• Não invente IoCs; extraia apenas o que está no texto.\n"
+    "• Responda APENAS o JSON, sem conversas adicionais."
 )
 
 

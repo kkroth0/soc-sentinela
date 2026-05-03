@@ -73,9 +73,9 @@ def request_with_retry_after(
     # Ou mais simples: apenas controlar o loop do 429. 
     # Para o retry do urllib3 (timeouts), precisamos de outro approach.
     
-    # Se use_retry for False, vamos usar o requests puro para evitar o adapter do singleton
+    # SEMPRE usa a sessão do pool para reaproveitar conexões TCP/TLS (Keep-Alive)
     if not use_retry:
-        return requests.request(method, url, timeout=timeout, **kwargs)
+        return session.request(method, url, timeout=timeout, **kwargs)
 
     # Realiza pelo menos uma tentativa. O loop range(max_429_retries + 1) garante isso.
     # Ex: se max_429_retries=0, o loop roda 1 vez (tentativa inicial).

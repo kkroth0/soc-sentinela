@@ -9,6 +9,7 @@ import time
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import config
 from core import storage
@@ -19,7 +20,6 @@ logger = get_logger("cve.nvd_client")
 
 _RESULTS_PER_PAGE: int = 100
 _MAX_RETRIES: int = 5
-_RATE_LIMIT_DELAY: float = 2.0
 
 _nvd_lock = threading.Lock()
 _last_req_time = 0.0
@@ -36,7 +36,6 @@ def _rate_limit_wait():
             time.sleep(min_interval - elapsed)
         _last_req_time = time.time()
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def fetch_recent_cves(time_window_minutes: int | None = None) -> list[dict[str, Any]]:
     """

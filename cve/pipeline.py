@@ -21,14 +21,15 @@ def should_alert(
     cve: dict[str, Any],
     normalized_assets: list[dict[str, Any]],
     blacklist: list[dict[str, Any]],
+    db_module: Any = storage
 ) -> tuple[bool, str]:
-    """Decide se uma CVE se torna alerta."""
+    """Decide se uma CVE se torna alerta via interface injetada."""
     cve_id = cve.get("cve_id", "")
 
-    if storage.is_cve_sent(cve_id):
+    if db_module.is_cve_sent(cve_id):
         return False, "já enviada"
 
-    if not storage.acquire_cve_lock(cve_id):
+    if not db_module.acquire_cve_lock(cve_id):
         return False, "já em processamento"
 
     try:
@@ -54,13 +55,14 @@ def _process_single_cve(
     cve: dict[str, Any],
     normalized_assets: list[dict[str, Any]],
     blacklist: list[dict[str, Any]],
-    notifier: BaseNotifier
+    notifier: BaseNotifier,
+    db_module: Any = storage
 ) -> tuple[bool, str]:
     """Processa uma única CVE e envia via notificador injetado."""
     cve_id = cve.get("cve_id", "")
 
     try:
-        alert_rule, reason = should_alert(cve, normalized_assets, blacklist)
+        alert_rule, reason = should_alert(cve, normalized_assets, blacklist, db_module)
         if not alert_rule:
             return False, reason
 
@@ -87,7 +89,7 @@ def _process_single_cve(
         success = notifier.send_cve_alert(alert)
 
         if success:
-            storage.save_cve(cve)
+            db_module.save_cve(cve)
             return True, "enviado com sucesso"
         else:
             return False, "falha no envio"
@@ -96,11 +98,14 @@ def _process_single_cve(
         logger.error("Erro ao processar CVE %s: %s", cve_id, exc)
         return False, f"erro inesperado: {str(exc)}"
     finally:
-        storage.release_cve_lock(cve_id)
+        db_module.release_cve_lock(cve_id)
 
 
-def run(notifier: BaseNotifier = global_dispatcher) -> dict[str, int]:
-    """Executa o pipeline CVE injetando o notificador."""
+def run(
+    notifier: BaseNotifier = global_dispatcher,
+    db_module: Any = storage
+) -> dict[str, int]:
+    """Executa o pipeline CVE com injeção de dependências."""
     logger.info("--- Pipeline CVE iniciado ---")
     stats = {"total": 0, "alerted": 0, "skipped": 0, "errors": 0}
     skipped_reasons = {}
@@ -115,7 +120,7 @@ def run(notifier: BaseNotifier = global_dispatcher) -> dict[str, int]:
 
         with ThreadPoolExecutor(max_workers=3) as executor:
             future_to_cve = {
-                executor.submit(_process_single_cve, cve, normalized_assets, blacklist, notifier): cve 
+                executor.submit(_process_single_cve, cve, normalized_assets, blacklist, notifier, db_module): cve 
                 for cve in cves
             }
             
@@ -131,15 +136,14 @@ def run(notifier: BaseNotifier = global_dispatcher) -> dict[str, int]:
                         skipped_reasons[cve_id] = reason
                 except Exception as exc:
                     stats["errors"] += 1
-                    logger.error("Erro inesperado na CVE %s: %s", cve_id, exc)
+                    logger.error("Falha inesperada na CVE %s: %s", cve_id, exc)
                     skipped_reasons[cve_id] = f"erro fatal: {str(exc)}"
 
     except Exception as exc:
         logger.error("Erro fatal no pipeline CVE: %s", exc)
 
     if skipped_reasons:
-        logger.info("Resumo das CVEs ignoradas:")
-        # Agrupar por motivo para não inundar o log se houver centenas
+        logger.info("Resumo das CVEs ignoradas ou com erro:")
         from collections import Counter
         summary_reasons = Counter(skipped_reasons.values())
         for reason, count in summary_reasons.items():

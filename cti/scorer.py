@@ -86,12 +86,14 @@ def score_article(article: dict[str, Any], asset_map: dict[str, dict[str, Any]])
             _ASSET_CACHE[key] = re.compile(r'\b(' + '|'.join(map(re.escape, all_terms)) + r')\b', re.IGNORECASE)
         
         pattern = _ASSET_CACHE[key]
-        if pattern and pattern.search(text_to_search):
-            match_term = pattern.search(text_to_search).group(0)
-            score += 50
-            reasons.append(f"Ativo Monitorado ({match_term})")
-            matched_assets.append(match_term.lower())
-            break
+        if pattern:
+            m = pattern.search(text_to_search)
+            if m:
+                match_term = m.group(0)
+                score += 50
+                reasons.append(f"Ativo Monitorado ({match_term})")
+                matched_assets.append(match_term.lower())
+                break
 
     # 3. CATEGORIAS DINÂMICAS (CAT 1-8 e NOISE)
     for cat_id, pattern in _COMPILED_REGEX.items():
@@ -100,7 +102,7 @@ def score_article(article: dict[str, Any], asset_map: dict[str, dict[str, Any]])
         m = pattern.search(text_to_search)
         if m:
             cat_data = _CATEGORIES.get(cat_id, {})
-            # Especial para Cat 7 (Vendors Críticos): não duplica se já deu match no ativo
+            # Regra de Ouro: Cat 7 (Fabricantes Críticos) não deve duplicar o score se já deu match no ativo específico
             if cat_id == "CAT7_CRITICAL_VENDORS" and m.group(0).lower() in matched_assets:
                 continue
                 

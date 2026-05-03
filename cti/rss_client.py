@@ -44,6 +44,7 @@ RSS_FEEDS: list[dict[str, Any]] = [
     {"url": "https://any.run/cybersecurity-blog/feed/", "source": "ANY.RUN Blog", "layer": 3},
     {"url": "https://www.elastic.co/security-labs/rss/feed.xml", "source": "Elastic Security", "layer": 3},
     {"url": "https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v/", "source": "Mandiant Google", "layer": 3},
+    {"url": "https://www.securonix.com/blog/", "source": "Securonix", "layer": 3, "is_static": True},
 
     # Layer 4: Regional Intelligence (LATAM/BR)
     {"url": "https://www.cisoadvisor.com.br/feed/", "source": "CISO Advisor", "layer": 4},
@@ -89,8 +90,12 @@ def _parse_feed(
     url = feed_info["url"]
     source = feed_info["source"]
     layer = feed_info["layer"]
+    is_static = feed_info.get("is_static", False)
 
-    logger.debug("Processando feed: %s", source)
+    logger.debug("Processando %s: %s", "site estático" if is_static else "feed", source)
+    
+    if is_static:
+        return _parse_static_page(feed_info, cutoff)
     
     try:
         # Fetch explícito com timeout RÍGIDO (sem retries automáticos) 
@@ -132,16 +137,64 @@ def _parse_feed(
     return articles
 
 
+def _parse_static_page(feed_info: dict[str, Any], cutoff: datetime) -> list[dict[str, Any]]:
+    """Descoberta de links em sites estáticos (sem RSS)."""
+    from scrapling import Fetcher
+    
+    url = feed_info["url"]
+    source = feed_info["source"]
+    layer = feed_info["layer"]
+    
+    articles: list[dict[str, Any]] = []
+    
+    try:
+        fetcher = Fetcher()
+        page = fetcher.get(url)
+        # Seletores específicos para Securonix (identificados pelo browser agent)
+        # Buscamos os cards de artigos
+        links = page.find_all("a.noHover") or page.find_all("a.avia-button")
+        
+        # Filtramos links válidos e removemos duplicados
+        seen_urls = set()
+        for link_element in links:
+            link = link_element.attrib.get("href")
+            if not link or "/blog/" not in link or link == url or link in seen_urls:
+                continue
+            
+            seen_urls.add(link)
+            # Como não temos a data no card de forma fácil, usamos 'now' 
+            # (o pipeline vai filtrar por duplicidade no banco depois)
+            articles.append({
+                "title": link_element.text or "Securonix Intelligence",
+                "url": link,
+                "summary": "Descoberta via monitoramento estático.",
+                "source": source,
+                "layer": layer,
+                "date": datetime.now(timezone.utc).isoformat()
+            })
+            # Pegamos apenas os 3 primeiros para não sobrecarregar
+            if len(articles) >= 3: break
+            
+    except Exception as exc:
+        logger.error("Erro na descoberta estática de '%s': %s", source, exc)
+
+    return articles
+
+
 def _parse_entry(
     entry: Any,
     source: str,
     layer: int,
     cutoff: datetime,
 ) -> dict[str, Any] | None:
-    """Normaliza uma entrada RSS em estrutura interna."""
-    # Data de publicação (Parse resiliente via calendar.timegm)
-    import time
+    """
+    Normaliza uma entrada RSS. Atua como 'Sensor de Descoberta'.
+    O conteúdo denso será extraído posteriormente pelo ScraplingClient.
+    """
     import calendar
+    import html
+
+    # 1. Validação de Janela Temporal
     published = entry.get("published_parsed") or entry.get("updated_parsed")
     if published:
         pub_date = datetime.fromtimestamp(calendar.timegm(published), tz=timezone.utc)
@@ -150,37 +203,26 @@ def _parse_entry(
     else:
         pub_date = datetime.now(timezone.utc)
 
-    title = entry.get("title", "").strip()
+    # 2. Extração Básica (Identidade da Notícia)
+    title = html.unescape(entry.get("title", "").strip())
     link = entry.get("link", "").strip()
-    summary = entry.get("summary", entry.get("description", "")).strip()
-
+    
     if not title or not link:
         return None
 
-    # Normalização de URL: Remove parâmetros de tracking para evitar duplicidade
-    link = re.sub(r'[\?&](utm_[^&]+|feature=[^&]+|fbclid=[^&]+)', '', link)
-    link = link.rstrip('?') # Limpa interrogação órfã no final
+    # Limpeza de trackers na URL para evitar duplicidade no DB
+    link = re.sub(r'[\?&](utm_[^&]+|feature=[^&]+|fbclid=[^&]+)', '', link).rstrip('?')
 
-    # Limpar HTML e Unescape de entidades (Performance)
-    import html
-    if summary and "<" in summary:
-        summary = re.sub(r"<[^>]+>", "", summary)
-    summary = html.unescape(summary or "").strip()
-
-    # Fallback via Scrapling: Se o RSS vier vazio, tenta uma raspagem rápida do conteúdo completo
-    if not summary and link:
-        try:
-            from cti.scrapling_client import fetch_full_content
-            # Como estamos dentro de um ThreadPoolExecutor, o bloqueio do Playwright (se disparado)
-            # não vai travar o pipeline inteiro.
-            summary = fetch_full_content(link)
-        except Exception:
-            pass
-
+    # 3. Resumo Preliminar (Apenas como metadado ou fallback)
+    summary = entry.get("summary", entry.get("description", ""))
+    if summary:
+        summary = re.sub(r"<[^>]+>", "", summary) # Limpeza HTML ultra-básica
+        summary = html.unescape(summary).strip()
+    
     return {
         "title": title,
         "url": link,
-        "summary": summary[:500],
+        "summary": summary[:1000] if summary else "",
         "source": source,
         "layer": layer,
         "date": pub_date.isoformat(),
