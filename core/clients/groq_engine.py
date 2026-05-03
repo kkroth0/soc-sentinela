@@ -12,6 +12,15 @@ from core.logger import get_logger
 
 logger = get_logger("core.clients.groq_engine")
 
+# Lista de modelos para Fallback em caso de Rate Limit (429)
+# O Groq aplica limites de tokens por modelo, então alternar modelos resolve o bloqueio.
+FALLBACK_MODELS = [
+    config.GROQ_MODEL,         # llama-3.3-70b-versatile
+    "llama-3.1-8b-instant",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it"
+]
+
 def _clean_json_string(text: str) -> str:
     """Remove blocos de código Markdown e espaços extras da resposta da IA."""
     if not text: return ""
@@ -19,30 +28,43 @@ def _clean_json_string(text: str) -> str:
     text = re.sub(r"```(?:json)?\s*(.*?)\s*```", r"\1", text, flags=re.DOTALL)
     return text.strip()
 
-def chat_completion(messages: list[dict[str, str]], model: str = None, temperature: float = 0.1, json_mode: bool = False) -> Optional[str]:
-    """Chamada de baixo nível para a API da Groq."""
+def chat_completion(messages: list[dict[str, str]], temperature: float = 0.1, json_mode: bool = False) -> Optional[str]:
+    """
+    Chamada para a API da Groq com estratégia de Fallback Multi-Modelo.
+    Se um modelo retornar 429 (Rate Limit), tenta o próximo da lista.
+    """
     url = f"{config.GROQ_BASE_URL}/chat/completions"
     headers = {
         "Authorization": f"Bearer {config.GROQ_API_KEY}",
         "Content-Type": "application/json",
     }
-    payload = {
-        "model": model or config.GROQ_MODEL,
-        "messages": messages,
-        "temperature": temperature,
-    }
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
 
-    try:
-        response = http_client.post(url, headers=headers, json=payload)
-        if response.status_code == 200:
-            data = response.json()
-            return data["choices"][0]["message"]["content"].strip()
-        else:
-            logger.error("Groq API erro %d: %s", response.status_code, response.text[:200])
-    except Exception as exc:
-        logger.error("Falha ao chamar Groq API: %s", exc)
+    for model in FALLBACK_MODELS:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
+        try:
+            # Desativamos o retry interno do http_client (max_429_retries=0) para 
+            # não esperar o Retry-After longo e trocar de modelo IMEDIATAMENTE.
+            response = http_client.post(url, headers=headers, json=payload, max_429_retries=0)
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data["choices"][0]["message"]["content"].strip()
+            
+            if response.status_code == 429:
+                logger.warning("Groq: Rate Limit no modelo '%s'. Tentando próximo fallback...", model)
+                continue
+            
+            logger.error("Groq API erro %d no modelo %s: %s", response.status_code, model, response.text[:200])
+        except Exception as exc:
+            logger.error("Falha ao chamar Groq API (%s): %s", model, exc)
+    
     return None
 
 def ask_json(prompt: str, system_prompt: str, model: str = "llama-3.3-70b-versatile") -> Optional[dict[str, Any]]:
@@ -53,7 +75,6 @@ def ask_json(prompt: str, system_prompt: str, model: str = "llama-3.3-70b-versat
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
             ],
-            model=model,
             json_mode=True
         )
         if not response_text: return None

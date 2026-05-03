@@ -32,8 +32,6 @@ soc-sentinel/
 ├── cti/                    # Pipeline de Threat Intel
 │   ├── rss_client.py       # Coleta de feeds RSS globais e nacionais
 │   ├── scorer.py           # Motor de pontuação de relevância (Scoring)
-│   ├── translator.py       # Tradução CTI
-│   ├── summarizer.py       # Resumo técnico executivo (LLM)
 │   └── pipeline.py         # Orquestração de notícias
 ├── commands/               # Servidor HTTP (Teams Webhooks) - Porta 8765
 ├── reports/                # Gerador de relatórios Semanais e Mensais
@@ -138,7 +136,7 @@ O Sentinel foi desenhado para ser econômico. Se você possui créditos na Azure
 ## 🥇 Regras de Ouro da Arquitetura
 
 1. **Eficiência de Tokens:** Textos são truncados e limitados a 12.000 caracteres antes de atingir o LLM (Llama 3.3). Previne estouro de limite da API.
-2. **Zero Acoplamento:** O Groq LLM é um cliente HTTP puro e não carrega lógica de negócio. Os prompts moram inteiramente nos módulos de domínio (`cve/translator.py`, `cti/summarizer.py`).
+2. **Zero Acoplamento:** O Groq LLM é um cliente HTTP puro e não carrega lógica de negócio. Os prompts moram inteiramente no arquivo `config.py`.
 3. **Isolamento de Falhas:** Os módulos CVE e CTI são completamente independentes no *APScheduler*. Se o NVD do governo americano cair, o CTI pode continuar operando normalmente.
 
 ---

@@ -44,6 +44,7 @@ MIN_CVSS_SCORE: float = float(os.getenv("MIN_CVSS_SCORE", "2.0"))
 TIME_WINDOW_MINUTES: int = int(os.getenv("TIME_WINDOW_MINUTES", "5"))
 NEWS_TIME_WINDOW_MINUTES: int = int(os.getenv("NEWS_TIME_WINDOW_MINUTES", "60"))
 CISA_KEV_CACHE_HOURS: int = int(os.getenv("CISA_KEV_CACHE_HOURS", "24"))
+MAX_CVE_AGE_DAYS: int = int(os.getenv("MAX_CVE_AGE_DAYS", "30"))
 
 # ─── Caminhos de arquivo — sempre absolutos ──────────────────────────
 BOT_DB_PATH: str = os.path.abspath(
@@ -109,7 +110,7 @@ def validate_config() -> None:
         raise ValueError("ERRO CRÍTICO: GROQ_API_KEY ausente no .env")
 
     # Precisamos de pelo menos UM webhook do Teams para alertas
-    has_teams = any([TEAMS_WEBHOOK_URL, TEAMS_WEBHOOK_CVE, TEAMS_WEBHOOK_CTI])
+    has_teams = any((TEAMS_WEBHOOK_URL, TEAMS_WEBHOOK_CVE, TEAMS_WEBHOOK_CTI))
     if not has_teams:
         raise ValueError("ERRO CRÍTICO: Nenhum Webhook do Teams configurado (TEAMS_WEBHOOK_URL, _CVE ou _CTI)")
     

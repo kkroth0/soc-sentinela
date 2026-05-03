@@ -14,7 +14,7 @@ from core.logger import get_logger
 
 logger = get_logger("core.clients.http_client")
 
-_DEFAULT_TIMEOUT: int = 30
+_DEFAULT_TIMEOUT: int = 90
 _MAX_RETRIES: int = 3
 _BACKOFF_FACTOR: float = 1.0
 _POOL_CONNECTIONS: int = 10
@@ -77,12 +77,22 @@ def request_with_retry_after(
     if not use_retry:
         return requests.request(method, url, timeout=timeout, **kwargs)
 
-    for attempt in range(1, max_429_retries + 1):
+    # Realiza pelo menos uma tentativa. O loop range(max_429_retries + 1) garante isso.
+    # Ex: se max_429_retries=0, o loop roda 1 vez (tentativa inicial).
+    # Se max_429_retries=3, o loop roda até 4 vezes (1 inicial + 3 retries).
+    response = None
+    for attempt_idx in range(max_429_retries + 1):
+        attempt_num = attempt_idx + 1
         response = session.request(method, url, timeout=timeout, **kwargs)
 
         if response.status_code != 429:
             return response
 
+        # Se for um 429 e não houver mais tentativas de retry permitidas, aborta o loop
+        if attempt_idx >= max_429_retries:
+            break
+
+        # Lógica de espera do Retry-After
         retry_after = response.headers.get("Retry-After")
         if retry_after is not None:
             try:
@@ -90,31 +100,31 @@ def request_with_retry_after(
             except ValueError:
                 wait_seconds = 30
         else:
-            wait_seconds = min(30, 2 ** attempt)
+            wait_seconds = min(30, 2 ** attempt_num)
         
-        # Limite de segurança: não esperar mais que 2 minutos para não travar threads do scheduler
         if wait_seconds > 120:
             logger.error("Retry-After muito longo (%ds) para %s — abortando requisição.", wait_seconds, url)
             return response
 
         logger.warning(
             "429 Too Many Requests em %s — aguardando %ds (tentativa %d/%d)",
-            url, wait_seconds, attempt, max_429_retries,
+            url, wait_seconds, attempt_num, max_429_retries,
         )
         time.sleep(wait_seconds)
 
-    logger.error("Esgotou retentativas 429 para %s", url)
+    if response and response.status_code == 429:
+        logger.error("Esgotou retentativas 429 para %s", url)
     return response
 
 
 def get(url: str, use_retry: bool = True, **kwargs: Any) -> requests.Response:
     """GET com suporte a Retry-After."""
-    return request_with_retry_after("GET", url, use_retry=use_retry, **kwargs)
+    return request_with_retry_after(method="GET", url=url, use_retry=use_retry, **kwargs)
 
 
 def post(url: str, use_retry: bool = True, **kwargs: Any) -> requests.Response:
     """POST com suporte a Retry-After."""
-    return request_with_retry_after("POST", url, use_retry=use_retry, **kwargs)
+    return request_with_retry_after(method="POST", url=url, use_retry=use_retry, **kwargs)
 
 
 def close_session() -> None:

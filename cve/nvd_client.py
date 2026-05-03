@@ -18,7 +18,7 @@ from core.logger import get_logger
 logger = get_logger("cve.nvd_client")
 
 _RESULTS_PER_PAGE: int = 100
-_MAX_RETRIES: int = 3
+_MAX_RETRIES: int = 5
 _RATE_LIMIT_DELAY: float = 2.0
 
 _nvd_lock = threading.Lock()
@@ -58,6 +58,7 @@ def fetch_recent_cves(time_window_minutes: int | None = None) -> list[dict[str, 
     }
     headers = {"apiKey": config.NVD_API_KEY} if config.NVD_API_KEY else {}
 
+
     # 1. Sondagem inicial para obter o total de resultados
     try:
         probe_params = base_params.copy()
@@ -95,6 +96,8 @@ def fetch_recent_cves(time_window_minutes: int | None = None) -> list[dict[str, 
                 _rate_limit_wait()
                 resp = http_client.get(config.NVD_BASE_URL, params=params, headers=headers)
                 if resp.status_code == 200:
+                    if attempt > 1:
+                        logger.info("NVD: Página %d recuperada com sucesso na tentativa %d.", page_num + 1, attempt)
                     data = resp.json()
                     vulnerabilities = data.get("vulnerabilities", [])
                     page_results = []
@@ -111,11 +114,15 @@ def fetch_recent_cves(time_window_minutes: int | None = None) -> list[dict[str, 
         
         return []
 
-    # Executa com 3 workers para ser mais gentil com a API
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    # Executa com 10 workers para maximizar o download. O _rate_limit_wait impede o banimento.
+    with ThreadPoolExecutor(max_workers=10) as executor:
         futures = [executor.submit(fetch_page, p) for p in range(total_pages)]
+        completed = 0
         for future in as_completed(futures):
             all_cves.extend(future.result())
+            completed += 1
+            if completed % 10 == 0 or completed == total_pages:
+                logger.info("NVD: Progresso do download: %d/%d páginas concluídas...", completed, total_pages)
 
     # Atualiza o estado de sucesso
     storage.set_state("nvd_last_success", now.isoformat())
@@ -137,6 +144,22 @@ def _parse_cve(cve_data: dict[str, Any]) -> dict[str, Any] | None:
     if cvss_score is not None and cvss_score < config.MIN_CVSS_SCORE:
         logger.debug("CVE %s ignorada — CVSS %.1f < MIN %.1f", cve_id, cvss_score, config.MIN_CVSS_SCORE)
         return None
+
+    # Filtrar por idade de publicação real (evitar alertas falsos de CVEs de 2010 que foram modificadas hoje)
+    published_str = cve_data.get("published", "")
+    if published_str:
+        try:
+            pub_date = datetime.fromisoformat(published_str.replace("Z", "+00:00"))
+            if pub_date.tzinfo is None:
+                pub_date = pub_date.replace(tzinfo=timezone.utc)
+            
+            age_days = (datetime.now(timezone.utc) - pub_date).days
+            if age_days > config.MAX_CVE_AGE_DAYS:
+                logger.debug("CVE %s ignorada — Publicação original muito antiga (%d dias atrás).", cve_id, age_days)
+                return None
+        except Exception as exc:
+            logger.debug("Falha ao analisar data de publicação da CVE %s: %s", cve_id, exc)
+
 
     # Extrair TODOS os pares vendor/produto afetados
     affected_items = _extract_all_cpe_matches(cve_data)
@@ -172,7 +195,6 @@ def _parse_cve(cve_data: dict[str, Any]) -> dict[str, Any] | None:
         ),
         "risk_tag": None,
         "impacted_clients": [],
-        "translated": False,
         "raw": cve_data,
     }
 

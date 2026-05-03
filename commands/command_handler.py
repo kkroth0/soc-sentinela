@@ -139,8 +139,9 @@ class CommandRequestHandler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(length))
                 if "mes" in body:
                     year_month = body["mes"]
-        except Exception:
-            pass # Usa mês atual como padrão
+        except Exception as exc:
+            logger.debug("Falha ao processar payload em /ExportarMes (usando mês atual): %s", exc)
+
 
         cves = storage.get_cves_for_month(year_month)
         
