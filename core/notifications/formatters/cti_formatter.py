@@ -13,6 +13,13 @@ logger = get_logger("core.notifications.formatters.cti_formatter")
 
 _CATEGORY_LABEL = "🔵 Threat Intelligence"
 
+_LAYER_LABELS: dict[int, str] = {
+    1: "🔴 CVE / Exploit DB",
+    2: "🟠 Vendor Advisory",
+    3: "🔵 Threat Intelligence",
+    4: "🟢 Radar Regional (BR/LATAM)",
+}
+
 
 from core.notifications.formatters.component_factory import (
     build_header, build_fact_set, build_section_title, wrap_card
