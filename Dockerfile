@@ -12,7 +12,8 @@ LABEL version="1.1.0"
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    TZ=UTC
+    TZ=UTC \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
 
 # Configura timezone e instala dependências básicas
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -27,9 +28,14 @@ RUN groupadd --gid 1000 sentinel && \
 # Diretório de trabalho
 WORKDIR /app
 
-# Instalar dependências
+# Instalar dependências Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Browser headless (Chromium + libs do SO) para o fallback StealthyFetcher do
+# Scrapling. Instalado num path compartilhado e legível pelo usuário sentinel.
+# Camada própria: só rebuilda se requirements.txt mudar.
+RUN scrapling install && chmod -R a+rx /opt/pw-browsers
 
 # Copiar código-fonte
 COPY . .
