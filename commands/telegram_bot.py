@@ -236,14 +236,27 @@ class TelegramBotListener:
         sev_emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🟢"}
         lines = ["🛡️ <b>Últimas CVEs (Top 10)</b>", "━━━━━━━━━━━━━━━━━━━━━━"]
         for idx, item in enumerate(cves, 1):
-            cve_id = html.escape(str(item.get("cve_id", "?")))
+            cve_id = str(item.get("cve_id", "?"))
+            cve_id_safe = html.escape(cve_id)
             tag = str(item.get("risk_tag", "LOW"))
             emoji = sev_emoji.get(tag, "⚪")
             cvss = item.get("cvss_score")
             cvss_txt = f"CVSS {cvss}" if cvss is not None else "CVSS N/A"
-            vendor = html.escape(str(item.get("vendor", "") or "—").upper())
+            vendor = str(item.get("vendor", "") or "").upper()
+            product = str(item.get("product", "") or "").upper()
             date = str(item.get("sent_at", ""))[:10]
-            lines.append(f"{idx}. {emoji} <code>{cve_id}</code> ({cvss_txt} · {tag})\n   └ {vendor} | {date}")
+            nvd_url = f"https://nvd.nist.gov/vuln/detail/{cve_id}"
+
+            # Linha 1: CVE como link clicável para a NVD + severidade
+            lines.append(f'{idx}. {emoji} <a href="{nvd_url}">{cve_id_safe}</a> — {cvss_txt} · {tag}')
+            # Linha 2: vendor/produto (se houver) + data
+            meta = []
+            if vendor:
+                meta.append(f"🏢 {html.escape(vendor)}")
+            if product:
+                meta.append(f"📦 {html.escape(product)}")
+            meta.append(f"📅 {date}")
+            lines.append("   └ " + " · ".join(meta))
 
         self._send_reply(chat_id, "\n".join(lines))
 

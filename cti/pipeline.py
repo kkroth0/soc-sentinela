@@ -101,8 +101,12 @@ def _process_single_article(
         text_to_search = f"{article.get('title', '')} {article.get('summary', '')} {article.get('full_content', '') or ''}"
         cwes = enrichment.extract_cwes(text_to_search)
         threats = enrichment.extract_threats(text_to_search)
-        sectors = enrichment.extract_sectors(text_to_search)
-        countries = enrichment.extract_countries(text_to_search)
+        # Setores/países: prioriza a extração contextual da IA (apenas alvos/vítimas);
+        # cai para o casamento por palavra-chave se a IA não retornar lista válida.
+        ai_sectors = article.get("sectors_ai")
+        ai_countries = article.get("countries_ai")
+        sectors = ai_sectors if isinstance(ai_sectors, list) else enrichment.extract_sectors(text_to_search)
+        countries = ai_countries if isinstance(ai_countries, list) else enrichment.extract_countries(text_to_search)
         ttps = enrichment.extract_ttps(text_to_search)
 
         # Extrair e Enriquecer com CVEs Relacionadas

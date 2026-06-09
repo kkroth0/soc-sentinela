@@ -155,8 +155,9 @@ def process_news_intelligence(article: dict[str, Any]) -> None:
     
     prompt = f"Título: {title}\nConteúdo Original: {truncated_content}"
     _apply_intelligence(
-        article, 
-        prompt, 
-        {"title_pt": "title_pt", "summary_pt": "summary_pt", "iocs": "iocs_pt"},
+        article,
+        prompt,
+        {"title_pt": "title_pt", "summary_pt": "summary_pt", "iocs": "iocs_pt",
+         "sectors_ai": "sectors_pt", "countries_ai": "countries_pt"},
         config.PROMPT_NEWS_INTEL
     )
