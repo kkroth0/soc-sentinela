@@ -1,22 +1,22 @@
 {
     "CAT1_CRITICAL_IMPACT": {
-        "score": 50,
-        "label": "Impacto Crítico",
-        "terms": ["zero-day", "0-day", "actively exploited", "exploitada ativamente", "exploração ativa", "under active attack", "supply chain attack", "emergency patch", "hotfix", "vulnerabilidade crítica", "exploit"]
+        "score": 35,
+        "label": "Exploração Ativa",
+        "terms": ["zero-day", "0-day", "actively exploited", "exploited in the wild", "in the wild", "exploitada ativamente", "exploração ativa", "under active attack", "under attack", "supply chain attack", "emergency patch", "patch de emergência", "out-of-band patch", "proof-of-concept exploit", "poc exploit"]
     },
     "CAT2_MALWARE_THREATS": {
-        "score": 40,
+        "score": 30,
         "label": "Malware/Ransomware",
         "terms": ["malware", "ransomware", "backdoor", "wiper", "trojan", "keylogger", "stealer", "infostealer", "double extortion"]
     },
     "CAT3_BREACH_COMPROMISE": {
-        "score": 35,
+        "score": 25,
         "label": "Data Breach",
         "terms": ["data breach", "vazamento de dados", "compromised", "breach", "vazamento"],
         "exact_match": true
     },
     "CAT4_TTPS_CAMPAIGNS": {
-        "score": 30,
+        "score": 20,
         "label": "TTPs/Campanha",
         "terms": ["phishing", "command and control", "botnet", "credential harvesting", "credential theft", "c2", "c&c", "campanha"]
     },
@@ -31,18 +31,24 @@
         "terms": ["1000+", "mass exploitation", "milhares", "global scale", "mass attack"]
     },
     "CAT7_CRITICAL_VENDORS": {
-        "score": 15,
+        "score": 10,
         "label": "Vendor Crítico",
         "terms": ["microsoft", "aws", "azure", "google cloud", "gcp", "vmware", "fortinet", "cisco", "palo alto"],
         "exact_match": true
     },
     "CAT8_SECTORS": {
-        "score": 25,
+        "score": 20,
         "label": "Setor Estratégico",
         "terms": ["banco", "financeiro", "saúde", "hospital", "energia elétrica", "infraestrutura crítica", "utilities", "governo", "órgão público", "seguro", "seguradora", "fintech", "telecomunicações", "operadora"]
     },
+    "CAT9_VULN_CLASS": {
+        "score": 20,
+        "label": "Classe de Vuln",
+        "exact_match": true,
+        "terms": ["remote code execution", "rce", "arbitrary code execution", "arbitrary code", "authentication bypass", "auth bypass", "unauthenticated", "privilege escalation", "elevation of privilege", "sql injection", "command injection", "code injection", "path traversal", "directory traversal", "insecure deserialization", "deserialization", "use-after-free", "buffer overflow", "out-of-bounds write", "out-of-bounds read", "server-side request forgery", "ssrf", "request smuggling", "memory corruption", "type confusion"]
+    },
     "REGIONAL": {
-        "score": 50,
+        "score": 40,
         "label": "Radar Regional",
         "exact_terms": ["br", "pf", "sus", "stf", "stj", "tse", "bcb", "cvm"],
         "substring_terms": ["brasil", "brazil", "latam", "américa latina", "america latina", "américa do sul", "america do sul", "são paulo", "rio de janeiro", "brasília", "distrito federal", ".com.br", ".gov.br", ".edu.br", ".jus.br"]
@@ -50,6 +56,7 @@
     "NOISE_PENALTY": {
         "score": -100,
         "label": "Ruído Detectado",
+        "exact_match": true,
         "terms": ["carreira", "vaga", "emprego", "salário", "demanda", "profissão", "mercado de trabalho", "startup", "investimento", "rodada", "aporte", "fundo", "financiamento", "curiosidade", "tutorial", "como fazer", "dica", "webinar", "palestra", "curso"]
     }
 }

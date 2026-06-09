@@ -3,17 +3,18 @@ cti/pipeline.py — Orquestra o fluxo completo do pipeline CTI com Injeção de 
 """
 from typing import Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
 
 import config
 
 from core.models import StandardCTINews
-from core.notifications import global_dispatcher
-from core.notifications.base import BaseNotifier
+from core.notifications import telegram_dispatcher
+from core.notifications.telegram_notifier import TelegramNotifier
 from core import storage
 from core.logger import get_logger
 from core.data_manager import get_asset_map
 from core.clients import groq_engine
-from cti import rss_client
+from cti import rss_client, enrichment
 from cti.scorer import score_article
 
 logger = get_logger("cti.pipeline")
@@ -22,10 +23,46 @@ logger = get_logger("cti.pipeline")
 from cti.scrapling_client import scrapling_client
 from core.clients.scrapers import BaseScraper
 
+
+def get_or_fetch_cve(cve_id: str) -> dict[str, Any] | None:
+    """Tenta obter a CVE da base local; caso não encontre, busca na NVD e salva localmente."""
+    from core.storage.database import get_connection
+    conn = get_connection()
+    row = conn.execute("SELECT cvss_score, severity, risk_tag, payload_json FROM sent_cves WHERE cve_id = ?", (cve_id,)).fetchone()
+    if row:
+        try:
+            payload = json.loads(row["payload_json"]) if row["payload_json"] else {}
+        except Exception:
+            payload = {}
+        return {
+            "cve_id": cve_id,
+            "cvss_score": row["cvss_score"],
+            "severity": row["severity"],
+            "risk_tag": row["risk_tag"],
+            "cwes": payload.get("cwes", []),
+            "threats": payload.get("threats", [])
+        }
+    
+    # Busca na NVD se não estiver no banco
+    from cve.nvd_client import fetch_single_cve
+    from cve.risk_scorer import enrich_cve
+    from core.storage import save_cve
+    
+    cve_data = fetch_single_cve(cve_id)
+    if cve_data:
+        enriched = enrich_cve(cve_data, [])
+        try:
+            save_cve(enriched)
+        except Exception as exc:
+            logger.debug("Falha ao salvar CVE %s no banco: %s", cve_id, exc)
+        return enriched
+    return None
+
+
 def _process_single_article(
     article: dict[str, Any], 
     asset_map: dict[str, dict[str, Any]],
-    notifier: BaseNotifier,
+    notifier: TelegramNotifier,
     db_module: Any = storage,
     scraper: BaseScraper = scrapling_client
 ) -> tuple[bool, str]:
@@ -46,7 +83,7 @@ def _process_single_article(
     try:
         # Avaliação de Relevância (Scoring Inteligente)
         score, reasons = score_article(article, asset_map)
-        if score < 50:
+        if score < config.MIN_CTI_SCORE:
             logger.debug("Artigo ignorado (Score: %d) — %s", score, title)
             db_module.save_news(article, status="SKIPPED")
             return False, f"Score insuficiente ({score}): {', '.join(reasons)}"
@@ -60,6 +97,36 @@ def _process_single_article(
         # Processamento ÚNICO de IA (Tradução + Resumo) via motor unificado
         groq_engine.process_news_intelligence(article)
 
+        # Extração de contexto de ameaça (CWEs, ameaças, atores) — módulo dedicado
+        text_to_search = f"{article.get('title', '')} {article.get('summary', '')} {article.get('full_content', '') or ''}"
+        cwes = enrichment.extract_cwes(text_to_search)
+        threats = enrichment.extract_threats(text_to_search)
+        sectors = enrichment.extract_sectors(text_to_search)
+        countries = enrichment.extract_countries(text_to_search)
+        ttps = enrichment.extract_ttps(text_to_search)
+
+        # Extrair e Enriquecer com CVEs Relacionadas
+        cves_enriched = []
+        for cid in enrichment.extract_cve_ids(text_to_search):
+            cve_info = get_or_fetch_cve(cid)
+            if cve_info:
+                cves_enriched.append({
+                    "cve_id": cve_info.get("cve_id"),
+                    "cvss_score": cve_info.get("cvss_score"),
+                    "severity": cve_info.get("severity"),
+                    "risk_tag": cve_info.get("risk_tag"),
+                    "cwes": cve_info.get("cwes", []),
+                    "threats": cve_info.get("threats", [])
+                })
+                # Mesclar CWEs e Ameaças da CVE na notícia CTI
+                for cwe in cve_info.get("cwes", []):
+                    cwes.add(cwe)
+                for t in cve_info.get("threats", []):
+                    if t not in threats:
+                        threats.append(t)
+
+        cwes_list = sorted(list(cwes))
+
         # Construir Payload Neutro (DTO)
         news = StandardCTINews(
             title=article.get("title_pt") or article.get("title", ""),
@@ -68,7 +135,16 @@ def _process_single_article(
             layer=int(article.get("layer", 0)),
             summary=article.get("summary_pt") or article.get("summary", ""),
             date=article.get("date", ""),
-            iocs=article.get("iocs", "")
+            iocs=article.get("iocs", ""),
+            matched_assets=article.get("matched_assets", []),
+            score=score,
+            risk_reasons=reasons,
+            cwes=cwes_list,
+            threats=threats,
+            cves=cves_enriched,
+            sectors=sectors,
+            countries=countries,
+            ttps=ttps
         )
         
         # Envio via notificador injetado
@@ -86,7 +162,7 @@ def _process_single_article(
 
 
 def run(
-    notifier: BaseNotifier = global_dispatcher, 
+    notifier: TelegramNotifier = telegram_dispatcher,
     db_module: Any = storage,
     scraper: BaseScraper = scrapling_client
 ) -> dict[str, int]:

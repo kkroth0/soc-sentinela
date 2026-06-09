@@ -9,30 +9,30 @@ import config
 from core.clients import http_client
 from core.logger import get_logger
 from cve.aliases import get_aliases_for_vendor
+from core.constants import KEYWORD_THREATS
 
 logger = get_logger("cve.risk_scorer")
 
-# Cache para evitar recompilação de Regex (Padrão de performance v7.0)
-_REGEX_CACHE: dict[str, re.Pattern] = {}
-
-def _get_pattern(term: str) -> re.Pattern:
-    if term not in _REGEX_CACHE:
-        _REGEX_CACHE[term] = re.compile(r'\b' + re.escape(term) + r'\b', re.IGNORECASE)
-    return _REGEX_CACHE[term]
+from core.utils.regex import get_pattern as _get_pattern
 
 # Cache do CISA KEV
-_kev_cache: dict[str, Any] = {"cve_ids": set(), "last_fetch": 0.0}
+_kev_cache: dict[str, Any] = {"cves": {}, "last_fetch": 0.0}
 
 def _refresh_kev_cache() -> None:
     cache_ttl = config.CISA_KEV_CACHE_HOURS * 3600
-    if time.time() - _kev_cache["last_fetch"] < cache_ttl and _kev_cache["cve_ids"]:
+    if time.time() - _kev_cache["last_fetch"] < cache_ttl and _kev_cache["cves"]:
         return
     try:
         response = http_client.get(config.CISA_KEV_URL)
         if response.status_code == 200:
             data = response.json()
             vulns = data.get("vulnerabilities", [])
-            _kev_cache["cve_ids"] = {v.get("cveID") for v in vulns if v.get("cveID")}
+            _kev_cache["cves"] = {
+                v.get("cveID"): {
+                    "ransomware": v.get("knownRansomwareCampaignUse") == "Known"
+                }
+                for v in vulns if v.get("cveID")
+            }
             _kev_cache["last_fetch"] = time.time()
     except Exception: pass
 
@@ -78,7 +78,7 @@ def calculate_risk(cve: dict[str, Any], blacklist: list[dict[str, Any]]) -> tupl
 
     # ── 2. CISA KEV ───────────────────────────────────────────────────
     _refresh_kev_cache()
-    if cve_id in _kev_cache["cve_ids"]:
+    if cve_id in _kev_cache["cves"]:
         reasons.append("Presente no CISA KEV (Exploração Ativa)")
         return "CRITICAL", reasons
 
@@ -105,4 +105,28 @@ def enrich_cve(cve: dict[str, Any], blacklist: list[dict[str, Any]]) -> dict[str
     risk_tag, reasons = calculate_risk(cve, blacklist)
     cve["risk_tag"] = risk_tag
     cve["risk_reasons"] = reasons
+    
+    # Mapeamento de Ameaças (Threats)
+    threats = []
+    cve_id = cve.get("cve_id", "")
+    
+    # 1. CISA KEV e Ransomware
+    _refresh_kev_cache()
+    if cve_id in _kev_cache["cves"]:
+        threats.append("Exploração Ativa (CISA KEV)")
+        if _kev_cache["cves"][cve_id].get("ransomware"):
+            threats.append("Uso em Ransomware")
+            
+    # 2. Exploit Público Disponível
+    if cve.get("has_known_exploit"):
+        threats.append("Exploit Público Disponível")
+        
+    # 3. Categorização por palavras chaves na descrição
+    desc = (cve.get("description") or "").lower()
+    for kw, val in KEYWORD_THREATS.items():
+        if kw in desc:
+            if val not in threats:
+                threats.append(val)
+                
+    cve["threats"] = threats
     return cve

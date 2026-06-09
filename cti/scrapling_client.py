@@ -44,12 +44,14 @@ class ScraplingClient(BaseScraper):
                 logger.warning("Falha total na raspagem (Status %d): %s", page.status, url)
                 return ""
 
-            # PODER MÁXIMO: find_all busca tudo de uma vez com lógica interna otimizada
-            # Procuramos por tags de artigo ou blocos de conteúdo conhecidos
-            content_blocks = page.find_all(
-                tags=["article", "main", "section"],
-                classes=["post-content", "article-body", "entry-content", "td-post-content", "article-content"]
-            )
+            # Procuramos por tags de artigo ou blocos de conteúdo conhecidos.
+            # A API do Scrapling trata os kwargs de find_all como filtros de
+            # atributo (que só aceitam string), então as tags estruturais vão
+            # como argumento posicional e as classes via seletor CSS.
+            content_blocks = list(page.find_all(["article", "main", "section"]))
+            content_blocks += list(page.css(
+                ".post-content, .article-body, .entry-content, .td-post-content, .article-content"
+            ))
             
             best_text = ""
             if content_blocks:

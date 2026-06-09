@@ -1,6 +1,6 @@
 """
 bot.py — Orquestrador principal do SOC Sentinel.
-Agenda e inicializa pipelines CVE/CTI e relatórios via APScheduler.
+Agenda e inicializa o pipeline CTI e relatórios via APScheduler.
 """
 
 import signal
@@ -11,20 +11,23 @@ from datetime import datetime, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import config
-from commands import command_handler
+from commands.telegram_bot import telegram_bot
 from core import storage, data_manager
 from core.logger import get_logger
-from cve import pipeline as cve_pipeline
 from cti import pipeline as cti_pipeline
+from cve import pipeline as cve_pipeline
 from reports import reporter
 
 logger = get_logger("bot")
 
 
 def _run_all_pipelines() -> None:
-    """Executa ambos os pipelines (usado pelo trigger manual)."""
-    cve_pipeline.run()
+    """Executa os pipelines CTI e CVE (usado pelo trigger manual /iniciar)."""
     cti_pipeline.run()
+    try:
+        cve_pipeline.run()
+    except Exception as exc:
+        logger.error("Falha ao executar o pipeline CVE no trigger manual: %s", exc)
 
 
 def main() -> None:
@@ -46,19 +49,21 @@ def main() -> None:
         Sistema iniciado e pronto para monitoramento
         ----------------------------------------------------------------------
     """
-    for line in banner.splitlines():
-        if line.strip():
-            logger.info(line)
+    logger.info(banner)
 
     # ── 0. Graceful shutdown (Mover para o início para capturar Ctrl+C cedo) ──
     def _shutdown(signum: int = 0, frame: object = None) -> None:
-        import os
         from core.clients import http_client
         logger.info("Iniciando encerramento seguro do SOC Sentinel...")
         try:
             scheduler.shutdown(wait=False)
         except Exception as exc:
             logger.debug("Scheduler já encerrado ou erro no shutdown: %s", exc)
+        
+        try:
+            telegram_bot.stop()
+        except Exception as exc:
+            logger.debug("Erro ao parar Telegram Bot: %s", exc)
         
         # Garante fechamento de recursos
         storage.close_db()
@@ -82,34 +87,40 @@ def main() -> None:
     # ── 2. Inicializar banco de dados ─────────────────────────────────
     storage.init_db()
 
-    # ── 3. Iniciar servidor de comandos ───────────────────────────────
-    command_handler.set_pipeline_trigger(_run_all_pipelines)
-    command_handler.start_server()
+    # ── 2.1 Health server (Docker HEALTHCHECK / DO App Platform) ──────
+    from core import health
+    health.start_health_server(config.HEALTH_PORT)
+
+    # ── 3. Iniciar bot do Telegram ────────────────────────────────────
+    telegram_bot.set_pipeline_trigger(_run_all_pipelines)
+    telegram_bot.start()
 
     # ── 4. Configurar scheduler ───────────────────────────────────────
     scheduler = BackgroundScheduler(timezone="UTC")
     
     now = datetime.now(timezone.utc)
 
-    scheduler.add_job(cve_pipeline.run, "interval", minutes=config.TIME_WINDOW_MINUTES, next_run_time=now, id="cve_pipeline", name="Pipeline CVE", max_instances=1, coalesce=True)
+
     scheduler.add_job(cti_pipeline.run, "interval", minutes=config.NEWS_TIME_WINDOW_MINUTES, next_run_time=now, id="cti_pipeline", name="Pipeline CTI", max_instances=1, coalesce=True)
+    scheduler.add_job(cve_pipeline.run, "interval", minutes=config.CVE_SCHEDULE_MINUTES, next_run_time=now, id="cve_pipeline", name="Pipeline CVE", max_instances=1, coalesce=True)
     scheduler.add_job(reporter.run_weekly_report, "cron", day_of_week="mon", hour=8, minute=0, id="weekly_report", name="Relatório Semanal", max_instances=1)
     scheduler.add_job(reporter.run_monthly_report, "cron", day=1, hour=8, minute=0, id="monthly_report", name="Relatório Mensal", max_instances=1)
-    scheduler.add_job(data_manager.sync_assets_from_cloud, "interval", hours=12, id="sync_assets", name="Sincronização de Ativos", max_instances=1, coalesce=True)
 
-    # ── 5. Execução inicial imediata ──────────────────────────────────
-    logger.info("Executando carga de ativos síncrona antes dos pipelines...")
+    # ── 5. Carga inicial do inventário local de ativos ────────────────
+    logger.info("Carregando inventário local de ativos antes dos pipelines...")
     try:
-        data_manager.sync_assets_from_cloud()
+        if not data_manager.force_reload():
+            logger.warning("Inventário de ativos não encontrado em %s — CVE matching ficará vazio até o arquivo existir.", config.ASSETS_CACHE_PATH)
     except Exception as exc:
-        logger.error("Falha na carga inicial: %s", exc)
+        logger.error("Falha na carga inicial de ativos: %s", exc)
 
     # ── 6. Iniciar scheduler (background) ─────────────────────────────
-    logger.info("Scheduler iniciado — Pipelines CVE e CTI despachados ✅")
+    logger.info("Scheduler iniciado — Pipeline CTI despachado ✅")
     scheduler.start()
     
     try:
         while True:
+            health.beat()  # mantém o heartbeat do health check vivo
             time.sleep(1)
     except (KeyboardInterrupt, SystemExit):
         _shutdown()

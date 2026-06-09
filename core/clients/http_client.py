@@ -3,16 +3,30 @@ core/clients/http_client.py — Sessão HTTP compartilhada com retry, pooling e 
 Bug fix #6: Ao receber 429, lê o header Retry-After e aguarda exatamente esse tempo.
 """
 
+import os
+import socket
 import time
 from typing import Any
 
 import requests
+import urllib3.util.connection as urllib3_cn
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from core.logger import get_logger
 
 logger = get_logger("core.clients.http_client")
+
+# ── Força resolução IPv4 ──────────────────────────────────────────────
+# Em redes sem rota IPv6 (comum em VPS), o urllib3 tenta o registro AAAA
+# primeiro e falha com "[Errno 101] Network is unreachable" antes de testar
+# o IPv4 que funciona — afetando, p. ex., api.telegram.org. Desabilitar via
+# FORCE_IPV4=false caso a máquina tenha IPv6 pleno e prefira usá-lo.
+if os.getenv("FORCE_IPV4", "true").lower() in ("1", "true", "yes"):
+    def _allowed_gai_family() -> int:
+        return socket.AF_INET
+    urllib3_cn.allowed_gai_family = _allowed_gai_family
+    logger.info("Resolução de DNS forçada para IPv4 (FORCE_IPV4 ativo).")
 
 _DEFAULT_TIMEOUT: int = 90
 _MAX_RETRIES: int = 3

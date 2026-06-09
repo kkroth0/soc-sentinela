@@ -29,10 +29,10 @@ class TestCalculateRisk:
     def test_cisa_kev_returns_critical(self, mock_epss, mock_refresh, sample_cve):
         """CISA KEV → CRITICAL (exploração ativa confirmada)."""
         cve_id = sample_cve["cve_id"]
-        _kev_cache["cve_ids"].add(cve_id)
+        _kev_cache["cves"][cve_id] = {"ransomware": False}
         result, reasons = calculate_risk(sample_cve, [])
         assert result == "CRITICAL"
-        _kev_cache["cve_ids"].remove(cve_id)
+        _kev_cache["cves"].pop(cve_id, None)
 
     @patch("cve.risk_scorer._refresh_kev_cache", return_value=None)
     @patch("cve.risk_scorer._fetch_epss", return_value=0.78)
@@ -70,3 +70,31 @@ class TestCalculateRisk:
         cve = {"cve_id": "CVE-2026-5555", "cvss_score": 7.5, "product": "test"}
         result, reasons = calculate_risk(cve, [])
         assert result == "CRITICAL"  # HIGH bumped to CRITICAL
+
+    def test_enrich_cve_extracts_threats(self):
+        """Testa se a função enrich_cve mapeia ameaças corretamente."""
+        from cve.risk_scorer import enrich_cve
+        cve = {
+            "cve_id": "CVE-2026-9999",
+            "cvss_score": 9.8,
+            "description": "A critical zero-day ransomware attack vectors targets Cisco systems.",
+            "has_known_exploit": True,
+            "cwes": ["CWE-79"]
+        }
+        
+        # Simula presença em CISA KEV com ransomware e congela o cache
+        import time
+        _kev_cache["last_fetch"] = time.time()
+        _kev_cache["cves"]["CVE-2026-9999"] = {"ransomware": True}
+        
+        try:
+            enriched = enrich_cve(cve, [])
+            threats = enriched.get("threats", [])
+            assert "Exploração Ativa (CISA KEV)" in threats
+            assert "Uso em Ransomware" in threats
+            assert "Exploit Público Disponível" in threats
+            assert "Ransomware" in threats
+            assert "Zero-Day" in threats
+            assert "Grupo APT" not in threats
+        finally:
+            _kev_cache["cves"].pop("CVE-2026-9999", None)

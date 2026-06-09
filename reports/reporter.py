@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from core import storage
-from core.notifications import global_dispatcher
+from core.notifications import telegram_dispatcher
 from core.logger import get_logger
 from core.utils.dates import parse_iso, format_brazilian
 
@@ -137,8 +137,8 @@ def run_weekly_report() -> bool:
             high_count=stats["risk_breakdown"]["HIGH"],
         )
 
-        # Enviar via dispatcher (Teams + Telegram)
-        global_dispatcher.dispatch_report(stats, "weekly")
+        # Enviar via dispatcher (Telegram)
+        telegram_dispatcher.send_report(stats, "weekly")
 
         logger.info(
             "Relatório semanal %s enviado — CVEs=%d, Notícias=%d",
@@ -170,8 +170,8 @@ def run_monthly_report() -> bool:
         # Salvar resumo analítico no banco
         storage.save_monthly_summary(stats)
 
-        # Enviar via dispatcher (Teams + Telegram)
-        global_dispatcher.dispatch_report(stats, "monthly")
+        # Enviar via dispatcher (Telegram)
+        telegram_dispatcher.send_report(stats, "monthly")
 
         logger.info(
             "Relatório mensal %s enviado — CVEs=%d, Notícias=%d",

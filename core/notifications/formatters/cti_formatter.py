@@ -1,194 +1,183 @@
 """
-cti/formatter.py — Monta Adaptive Cards de notícias CTI para o Microsoft Teams.
+core/notifications/formatters/cti_formatter.py — Monta cartões HTML de notícias CTI
+para o Telegram.
+
+Cartão *adaptável por camada* (layer): o cabeçalho, a cor de severidade e o título
+da seção de análise mudam conforme o tipo do conteúdo. Notícias de ameaça (camadas
+1–3) recebem a seção "Impacto & Mitigação"; o Radar Regional/mercado (camada 4)
+recebe "Por que importa" — evitando o antigo template de segurança forçado em
+notícias que não são incidentes técnicos.
 """
 
 import html
-
 from typing import Any
 
-from core.utils.security import escape_adaptive_card_markdown, sanitize_url
 from core.logger import get_logger
+from core.models import StandardCTINews
+from core.notifications.formatters import TELEGRAM_MAX_LEN, clamp_telegram
 
 logger = get_logger("core.notifications.formatters.cti_formatter")
 
-_CATEGORY_LABEL = "🔵 Threat Intelligence"
-
-_LAYER_LABELS: dict[int, str] = {
-    1: "🔴 CVE / Exploit DB",
-    2: "🟠 Vendor Advisory",
-    3: "🔵 Threat Intelligence",
-    4: "🟢 Radar Regional (BR/LATAM)",
+# Metadados por camada: a camada agora identifica o TIPO de fonte (não a
+# severidade). O rótulo é honesto quanto à origem; `title_icon` e o rótulo da
+# segunda seção (ameaça vs. contexto) seguem adaptando-se à camada.
+_LAYER_META: dict[int, dict[str, str]] = {
+    1: {"label": "🛡️ Vendor Advisory",          "title_icon": "🚨", "analysis": "🛡️ IMPACTO &amp; MITIGAÇÃO"},
+    2: {"label": "📰 Security News",             "title_icon": "🚨", "analysis": "🛡️ IMPACTO &amp; MITIGAÇÃO"},
+    3: {"label": "🔬 Threat Research",           "title_icon": "🚨", "analysis": "🛡️ IMPACTO &amp; MITIGAÇÃO"},
+    4: {"label": "📡 Radar Regional (BR/LATAM)", "title_icon": "📡", "analysis": "🎯 POR QUE IMPORTA"},
+}
+_DEFAULT_META: dict[str, str] = {
+    "label": "📰 Notícia", "title_icon": "📰", "analysis": "📝 ANÁLISE",
 }
 
+_SEV_EMOJI: dict[str, str] = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🟢"}
 
-from core.notifications.formatters.component_factory import (
-    build_header, build_fact_set, build_section_title, wrap_card
-)
+# Faixas de severidade derivadas do score de relevância (0-100). A COR do cartão
+# segue a urgência real, não a camada — um item regional crítico fica vermelho.
+_SEVERITY_BANDS: list[tuple[int, str, str]] = [
+    (80, "🔴", "CRÍTICO"),
+    (60, "🟠", "ALTO"),
+    (40, "🟡", "MÉDIO"),
+    (0,  "🟢", "BAIXO"),
+]
 
-from core.models import StandardCTINews
 
-def build_news_card(news_input: Any) -> dict[str, Any]:
-    """Monta Adaptive Card para um artigo de notícia CTI com design Premium."""
-    # Garante que temos um objeto StandardCTINews (DTO)
+def _severity(score: int) -> tuple[str, str]:
+    """Retorna (emoji, rótulo) da faixa de severidade para o score dado."""
+    for threshold, emoji, label in _SEVERITY_BANDS:
+        if score >= threshold:
+            return emoji, label
+    return "🟢", "BAIXO"
+
+
+def _coerce_news(news_input: Any) -> StandardCTINews:
+    """Aceita tanto um dict bruto quanto um DTO StandardCTINews."""
+    if isinstance(news_input, StandardCTINews):
+        return news_input
     if isinstance(news_input, dict):
-        news = StandardCTINews(
+        return StandardCTINews(
             title=news_input.get("title_pt") or news_input.get("title", "Sem título"),
             summary=news_input.get("summary_pt") or news_input.get("summary", ""),
             source=news_input.get("source", "Desconhecido"),
-            layer=int(news_input.get("layer", 3)),
+            layer=int(news_input.get("layer", 3) or 3),
             url=news_input.get("url", ""),
             date=news_input.get("date", ""),
             matched_assets=news_input.get("impacted_clients") or news_input.get("matched_assets", []),
-            iocs=news_input.get("iocs", "")
+            iocs=news_input.get("iocs", ""),
+            score=int(news_input.get("score", 0) or 0),
+            risk_reasons=news_input.get("risk_reasons", []),
+            cwes=news_input.get("cwes", []),
+            threats=news_input.get("threats", []),
+            cves=news_input.get("cves", []),
+            sectors=news_input.get("sectors", []),
+            countries=news_input.get("countries", []),
+            ttps=news_input.get("ttps", []),
         )
-    else:
-        news = news_input
+    raise TypeError(f"Entrada inválida para o formatter CTI: {type(news_input)!r}")
 
-    title_esc = escape_adaptive_card_markdown(news.title)
-    summary_esc = escape_adaptive_card_markdown(news.summary)
-    source_esc = escape_adaptive_card_markdown(news.source)
-    url_san = sanitize_url(news.url)
-    iocs_raw = news.iocs
-    iocs_md = ""
+
+def _render_iocs(iocs_raw: Any) -> str:
+    """Renderiza os IoCs (dict categorizado ou string) como linhas HTML."""
+    def _is_empty(v: Any) -> bool:
+        return not v or "nenhum" in str(v).lower()
+
     if isinstance(iocs_raw, dict):
-        lines = []
+        lines: list[str] = []
         for key, values in iocs_raw.items():
-            if not values or "nenhum" in str(values).lower(): continue
-            lines.append(f"**{key}:**")
-            if isinstance(values, list):
-                for v in values:
-                    if isinstance(v, dict):
-                        for k2, v2 in v.items():
-                            if v2 and "nenhum" not in str(v2).lower(): lines.append(f"- `{v2}` ({k2})")
-                    else:
-                        lines.append(f"- `{v}`")
-            else:
-                lines.append(f"- `{values}`")
-        iocs_md = "\n".join(lines)
-    elif isinstance(iocs_raw, list):
-        iocs_md = "\n".join([f"- `{v}`" for v in iocs_raw])
-    else:
-        iocs_md = f"`{str(iocs_raw)}`" if iocs_raw else ""
-    
-    layer_label = _LAYER_LABELS.get(news.layer, "📰 Notícia")
+            if _is_empty(values):
+                continue
+            lines.append(f"<b>{html.escape(str(key))}:</b>")
+            items = values if isinstance(values, list) else [values]
+            for v in items:
+                if isinstance(v, dict):  # hashes aninhados {algoritmo: valor}
+                    for k2, v2 in v.items():
+                        if not _is_empty(v2):
+                            lines.append(f"• {html.escape(str(k2))}: <code>{html.escape(str(v2))}</code>")
+                elif not _is_empty(v):
+                    lines.append(f"• <code>{html.escape(str(v))}</code>")
+        return "\n".join(lines)
 
-    body = [
-        build_header(f"🚨 CTI Report - {title_esc}", "", color="accent"),
-        build_fact_set([
-            ("Categoria", _CATEGORY_LABEL),
-            ("Fonte", source_esc),
-            ("Camada", layer_label),
-            ("Data", news.date[:10] if news.date else "N/A")
-        ])
-    ]
+    iocs_str = str(iocs_raw).strip()
+    if iocs_str and "nenhum" not in iocs_str.lower():
+        return f"<code>{html.escape(iocs_str)}</code>"
+    return ""
 
-    if news.matched_assets:
-        body.append({
-            "type": "Container",
-            "style": "attention",
-            "spacing": "Medium",
-            "items": [{
-                "type": "TextBlock",
-                "text": f"🎯 **Ativos Correspondentes:** {' | '.join(news.matched_assets)}",
-                "weight": "Bolder", "wrap": True, "size": "Small"
-            }]
-        })
-
-    if summary_esc:
-        text = summary_esc[:800]
-        if url_san: text += f"\n\n**Fonte:** [{url_san}]({url_san})"
-        body.extend([
-            build_section_title("Descrição"),
-            {"type": "TextBlock", "text": text, "wrap": True, "spacing": "Small", "size": "Small", "isSubtle": True}
-        ])
-
-    if iocs_md and "Nenhum IoC" not in iocs_md:
-        body.extend([
-            build_section_title("🛡️ Indicadores (IoCs)"),
-            {
-                "type": "Container",
-                "style": "emphasis",
-                "items": [{"type": "TextBlock", "text": iocs_md, "wrap": True, "size": "Small", "fontType": "Monospace"}]
-            }
-        ])
-
-    actions = [{"type": "Action.OpenUrl", "title": "Ler artigo completo", "url": url_san}] if url_san else None
-    
-    logger.info("Card de notícia montado: %s (%s)", source_esc, title_esc[:40])
-    return wrap_card(body, actions)
 
 def build_news_telegram_message(news_input: Any) -> str:
-    """Monta a mensagem HTML para o Telegram escapando campos."""
-    # Garante que temos um objeto StandardCTINews (DTO)
-    if isinstance(news_input, dict):
-        news = StandardCTINews(
-            title=news_input.get("title_pt") or news_input.get("title", "Sem título"),
-            summary=news_input.get("summary_pt") or news_input.get("summary", ""),
-            source=news_input.get("source", "Desconhecido"),
-            layer=int(news_input.get("layer", 3)),
-            url=news_input.get("url", ""),
-            date=news_input.get("date", ""),
-            matched_assets=news_input.get("impacted_clients") or news_input.get("matched_assets", []),
-            iocs=news_input.get("iocs", "")
-        )
-    else:
-        news = news_input
+    """Monta o cartão HTML adaptável da notícia CTI para o Telegram."""
+    news = _coerce_news(news_input)
+    meta = _LAYER_META.get(news.layer, _DEFAULT_META)
 
     title = html.escape(news.title)
-    summary = html.escape(news.summary)
     source = html.escape(news.source)
     url = html.escape(news.url)
-    iocs_raw = news.iocs
-    iocs_text = ""
-    
-    if isinstance(iocs_raw, dict):
-        lines = []
-        for key, values in iocs_raw.items():
-            if not values or "nenhum" in str(values).lower(): continue
-            lines.append(f"<b>{key}:</b>")
-            if isinstance(values, list):
-                for v in values:
-                    if isinstance(v, dict): # Caso de hashes aninhados
-                        for k2, v2 in v.items():
-                            if v2 and "nenhum" not in str(v2).lower(): lines.append(f"• {k2}: <code>{v2}</code>")
-                    else:
-                        lines.append(f"• <code>{v}</code>")
-            else:
-                lines.append(f"• <code>{values}</code>")
-        iocs_text = "\n".join(lines)
-    elif isinstance(iocs_raw, list):
-        iocs_text = "\n".join([f"• <code>{v}</code>" for v in iocs_raw])
-    else:
-        iocs_text = f"<code>{html.escape(str(iocs_raw))}</code>" if iocs_raw else ""
 
-    layer_label = _LAYER_LABELS.get(news.layer, "📰 Notícia")
+    parts: list[str] = []
 
-    msg = f"🚨 <b>{layer_label}</b>\n"
-    msg += f"━━━━━━━━━━━━━━\n"
-    msg += f"🔥 <b>{title}</b>\n\n"
-    
-    msg += f"🏢 <b>Fonte:</b> {source}\n"
+    # ── Cabeçalho: cor = severidade (score), rótulo = tipo de fonte (camada) ──
+    sev_emoji, sev_label = _severity(news.score)
+    parts.append(f"{sev_emoji} <b>{sev_label}</b> · {meta['label']}")
+    parts.append("━━━━━━━━━━━━━━")
+    parts.append(f"{meta['title_icon']} <b>{title}</b>\n")
+
+    # ── Metadados ──
+    parts.append(f"🏢 <b>Fonte:</b> {source}")
     if news.date:
-        msg += f"📅 <b>Data:</b> {news.date[:10]}\n"
-    
+        parts.append(f"📅 <b>Data:</b> {html.escape(news.date[:10])}")
     if news.matched_assets:
-        msg += f"🎯 <b>Ativos:</b> {', '.join(news.matched_assets)}\n"
-    
-    msg += f"\n"
+        assets = ", ".join(html.escape(str(a)) for a in news.matched_assets)
+        parts.append(f"🎯 <b>Ativos Monitorados:</b> {assets}")
+    if news.cwes:
+        parts.append(f"🏷️ <b>CWE:</b> {', '.join(html.escape(c) for c in news.cwes)}")
+    if news.threats:
+        parts.append(f"👾 <b>Ameaças:</b> {', '.join(html.escape(t) for t in news.threats)}")
+    if news.sectors:
+        parts.append(f"🏭 <b>Setores Visados:</b> {', '.join(html.escape(s) for s in news.sectors)}")
+    if news.countries:
+        parts.append(f"🌍 <b>Países/Regiões:</b> {', '.join(html.escape(c) for c in news.countries)}")
+    if news.ttps:
+        ttp_lines = ["🎯 <b>TTPs (MITRE ATT&amp;CK):</b>"]
+        ttp_lines += [f"  • {html.escape(t)}" for t in news.ttps[:6]]
+        parts.append("\n".join(ttp_lines))
+    if news.cves:
+        cve_lines = ["🔍 <b>CVEs Relacionadas:</b>"]
+        for c in news.cves[:5]:
+            c_id = html.escape(str(c.get("cve_id", "")))
+            cvss = c.get("cvss_score")
+            cvss_txt = f"CVSS {cvss}" if cvss is not None else "CVSS N/A"
+            sev = str(c.get("risk_tag", "LOW"))
+            emoji = _SEV_EMOJI.get(sev, "⚪")
+            cve_lines.append(f"  • {emoji} <code>{c_id}</code> ({cvss_txt} · {sev})")
+        parts.append("\n".join(cve_lines))
 
-    if summary:
-        paragraphs = [p.strip() for p in summary.split("\n\n") if p.strip()]
+    parts.append("")  # linha em branco antes do corpo
+
+    # ── Resumo / Análise (rótulo da 2ª seção adapta-se à camada) ──
+    if news.summary:
+        paragraphs = [p.strip() for p in news.summary.split("\n\n") if p.strip()]
         if len(paragraphs) >= 2:
-            msg += f"📝 <b>RESUMO DO EVENTO</b>\n{paragraphs[0]}\n\n"
-            msg += f"🛡️ <b>ANÁLISE E MITIGAÇÃO</b>\n{paragraphs[1]}\n\n"
+            parts.append(f"📝 <b>RESUMO</b>\n{html.escape(paragraphs[0])}\n")
+            body = "\n\n".join(html.escape(p) for p in paragraphs[1:])
+            parts.append(f"{meta['analysis']}\n{body}\n")
         else:
-            msg += f"📝 <b>RESUMO PROFISSIONAL</b>\n{summary}\n\n"
+            parts.append(f"📝 <b>RESUMO</b>\n{html.escape(news.summary)}\n")
 
+    # ── IoCs ──
+    iocs_text = _render_iocs(news.iocs)
     if iocs_text:
-        msg += f"🛡️ <b>INDICADORES (IoCs)</b>\n"
-        msg += f"{iocs_text}\n\n"
+        parts.append(f"🛡️ <b>INDICADORES (IoCs)</b>\n{iocs_text}\n")
 
-    if url:
-        msg += f"🔗 <a href='{url}'>Acesse o artigo completo</a>"
+    # ── Link (hyperlink limpo em vez de URL crua) ──
+    if news.url:
+        parts.append(f'🔗 <a href="{url}">Abrir fonte original</a>')
 
-    return msg
+    # ── Rodapé de relevância ──
+    if news.score and news.score > 0:
+        footer = f"\n📊 <b>Relevância:</b> {news.score}/100"
+        if news.risk_reasons:
+            reasons = ", ".join(html.escape(r) for r in news.risk_reasons[:4])
+            footer += f" — {reasons}"
+        parts.append(footer)
+
+    return clamp_telegram("\n".join(parts))

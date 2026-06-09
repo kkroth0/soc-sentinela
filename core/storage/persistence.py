@@ -35,7 +35,7 @@ def is_cve_sent(cve_id: str) -> bool:
 def save_cve(cve: dict[str, Any]) -> None:
     now = now_iso()
     clients_json = json.dumps(cve.get("impacted_clients", []))
-    payload_json = json.dumps(cve.get("payload"), default=str) if cve.get("payload") else None
+    payload_json = json.dumps(cve, default=str)
     with _db_lock:
         conn = get_connection()
         try:

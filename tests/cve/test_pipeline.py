@@ -28,7 +28,7 @@ class TestShouldAlert:
         mock_matcher.match_cve_to_clients.return_value = ["CLIENTE1", "CLIENTE2"]
 
         norm = normalize_asset_map(sample_asset_map)
-        success, reason = should_alert(sample_cve, norm, sample_blacklist)
+        success, reason = should_alert(sample_cve, norm, sample_blacklist, db_module=mock_storage)
         assert success is True
         assert "cliente(s) impactado(s)" in reason
 
@@ -45,7 +45,7 @@ class TestShouldAlert:
         mock_matcher.match_cve_to_clients.return_value = []
 
         norm = normalize_asset_map(sample_asset_map)
-        success, reason = should_alert(sample_cve_low, norm, sample_blacklist)
+        success, reason = should_alert(sample_cve_low, norm, sample_blacklist, db_module=mock_storage)
         assert success is False
         assert "sem match de ativos" in reason
 
@@ -62,7 +62,7 @@ class TestShouldAlert:
         mock_matcher.match_cve_to_clients.return_value = []
 
         norm = normalize_asset_map(sample_asset_map)
-        success, reason = should_alert(sample_cve, norm, sample_blacklist)
+        success, reason = should_alert(sample_cve, norm, sample_blacklist, db_module=mock_storage)
         assert success is False
         assert "sem match de ativos" in reason
 
@@ -80,7 +80,7 @@ class TestShouldAlert:
         mock_matcher.match_cve_to_clients.return_value = ["CLIENTE1"]
 
         norm = normalize_asset_map(sample_asset_map)
-        success, reason = should_alert(sample_cve_blacklisted, norm, sample_blacklist)
+        success, reason = should_alert(sample_cve_blacklisted, norm, sample_blacklist, db_module=mock_storage)
         assert success is False
         assert "blacklist" in reason
 
@@ -92,7 +92,7 @@ class TestShouldAlert:
         mock_storage.is_cve_sent.return_value = True
 
         norm = normalize_asset_map(sample_asset_map)
-        success, reason = should_alert(sample_cve, norm, sample_blacklist)
+        success, reason = should_alert(sample_cve, norm, sample_blacklist, db_module=mock_storage)
         assert success is False
         assert reason == "já enviada"
 
@@ -105,6 +105,6 @@ class TestShouldAlert:
         mock_storage.acquire_cve_lock.return_value = False
 
         norm = normalize_asset_map(sample_asset_map)
-        success, reason = should_alert(sample_cve, norm, sample_blacklist)
+        success, reason = should_alert(sample_cve, norm, sample_blacklist, db_module=mock_storage)
         assert success is False
         assert reason == "já em processamento"

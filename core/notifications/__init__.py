@@ -1,14 +1,8 @@
-import config
-from core.notifications.dispatcher import NotificationDispatcher
-from core.notifications.teams_notifier import TeamsNotifier
+"""
+core/notifications/__init__.py — Instância única do notificador Telegram.
+"""
 from core.notifications.telegram_notifier import TelegramNotifier
 
-def build_dispatcher() -> NotificationDispatcher:
-    notifiers = []
-    if config.TEAMS_WEBHOOK_URL:
-        notifiers.append(TeamsNotifier())
-    if config.TELEGRAM_BOT_TOKEN and (config.TELEGRAM_CHAT_ID_CVE or config.TELEGRAM_CHAT_ID_CTI):
-        notifiers.append(TelegramNotifier())
-    return NotificationDispatcher(notifiers=notifiers)
-
-global_dispatcher = build_dispatcher()
+# Canal de saída único do projeto (Telegram). O nome antigo `global_dispatcher`
+# vinha da época em que havia múltiplos canais (Teams) e foi removido.
+telegram_dispatcher = TelegramNotifier()

@@ -175,6 +175,9 @@ def _parse_cve(cve_data: dict[str, Any]) -> dict[str, Any] | None:
             description_en = desc.get("value", "")
             break
 
+    # Extrair CWEs
+    cwes = _extract_cwes(cve_data)
+
     return {
         "cve_id": cve_id,
         "cvss_score": cvss_score,
@@ -194,6 +197,7 @@ def _parse_cve(cve_data: dict[str, Any]) -> dict[str, Any] | None:
         ),
         "risk_tag": None,
         "impacted_clients": [],
+        "cwes": cwes,
         "raw": cve_data,
     }
 
@@ -241,3 +245,40 @@ def _extract_all_cpe_matches(cve_data: dict[str, Any]) -> list[tuple[str, str]]:
         _walk_nodes(cfg.get("nodes", []))
                     
     return list(affected)
+
+
+def _extract_cwes(cve_data: dict[str, Any]) -> list[str]:
+    """Extrai códigos CWE (ex: CWE-79) do registro da vulnerabilidade."""
+    cwes = set()
+    for weakness in cve_data.get("weaknesses", []):
+        for desc in weakness.get("description", []):
+            val = desc.get("value", "").strip()
+            if val.upper().startswith("CWE-"):
+                cwes.add(val.upper())
+    return sorted(list(cwes))
+
+
+def fetch_single_cve(cve_id: str) -> dict[str, Any] | None:
+    """Busca os detalhes de uma única CVE diretamente da API NVD."""
+    headers = {"apiKey": config.NVD_API_KEY} if config.NVD_API_KEY else {}
+    params = {"cveId": cve_id}
+    
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            if attempt > 1:
+                time.sleep(attempt * 2.0)
+            _rate_limit_wait()
+            resp = http_client.get(config.NVD_BASE_URL, params=params, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                vulns = data.get("vulnerabilities", [])
+                if vulns:
+                    cve_item = vulns[0].get("cve", {})
+                    return _parse_cve(cve_item)
+                return None
+            elif resp.status_code == 404:
+                logger.warning("CVE %s não encontrada na NVD (404).", cve_id)
+                return None
+        except Exception as exc:
+            logger.error("Erro ao buscar CVE %s (tentativa %d): %s", cve_id, attempt, exc)
+    return None

@@ -9,14 +9,7 @@ from cve.aliases import get_aliases_for_vendor
 
 logger = get_logger("cve.asset_matcher")
 
-# Cache de Regex para evitar recompilações idênticas entre CVEs
-_REGEX_CACHE: dict[str, re.Pattern] = {}
-
-def _get_pattern(term: str) -> re.Pattern:
-    """Retorna um padrão de Regex pré-compilado com word boundaries."""
-    if term not in _REGEX_CACHE:
-        _REGEX_CACHE[term] = re.compile(r'\b' + re.escape(term) + r'\b', re.IGNORECASE)
-    return _REGEX_CACHE[term]
+from core.utils.regex import get_pattern as _get_pattern
 
 def normalize_asset_map(asset_map: dict[str, dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     """

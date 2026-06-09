@@ -3,7 +3,7 @@ from cve.asset_matcher import match_cve_to_clients, normalize_asset_map
 
 # --- HAPPY PATH ---
 def test_should_match_cve_when_vendor_and_product_exist_in_asset_map():
-    asset_map = {"microsoft": ["Global SOC"], "windows": ["Global SOC"]}
+    asset_map = {"microsoft:windows": {"clients": ["Global SOC"], "aliases": []}}
     cve = {"vendor": "Microsoft", "product": "Windows", "affected_products": [("microsoft", "windows")]}
     
     norm = normalize_asset_map(asset_map)
@@ -11,7 +11,7 @@ def test_should_match_cve_when_vendor_and_product_exist_in_asset_map():
     assert "Global SOC" in matches
 
 def test_should_match_via_affected_products_when_primary_vendor_fails():
-    asset_map = {"linux": ["Client A"]}
+    asset_map = {"linux:": {"clients": ["Client A"], "aliases": []}}
     cve = {
         "vendor": "Unknown", 
         "product": "Unknown", 
@@ -23,7 +23,7 @@ def test_should_match_via_affected_products_when_primary_vendor_fails():
 
 # --- EDGE CASES ---
 def test_should_return_empty_list_when_no_matches_found():
-    asset_map = {"apple": ["Client B"]}
+    asset_map = {"apple:": {"clients": ["Client B"], "aliases": []}}
     cve = {"vendor": "Microsoft", "product": "Office", "affected_products": []}
     norm = normalize_asset_map(asset_map)
     matches = match_cve_to_clients(cve, norm)
@@ -37,7 +37,7 @@ def test_should_return_empty_list_when_asset_map_is_empty():
 
 # --- MALFORMED DATA ---
 def test_should_handle_missing_keys_gracefully():
-    asset_map = {"microsoft": ["Global SOC"]}
+    asset_map = {"microsoft:": {"clients": ["Global SOC"], "aliases": []}}
     # CVE incompleta sem 'affected_products'
     cve = {"vendor": "Microsoft", "product": "Office"}
     

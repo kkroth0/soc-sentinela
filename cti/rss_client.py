@@ -18,39 +18,30 @@ from core.clients import http_client  # type: ignore
 logger = get_logger("cti.rss_client")
 
 # ─── Feeds por camada ─────────────────────────────────────────────────
-RSS_FEEDS: list[dict[str, Any]] = [
-    # Layer 1: Vendor Security Advisories
-    {"url": "https://filestore.fortinet.com/fortiguard/rss/ir.xml", "source": "FortiGuard IR", "layer": 1},
-    {"url": "https://filestore.fortinet.com/fortiguard/rss/outbreakalert.xml", "source": "FortiGuard Outbreak", "layer": 1},
-    {"url": "https://feeds.feedburner.com/GoogleChromeReleases", "source": "Google Chrome Releases", "layer": 1},
-    {"url": "https://about.gitlab.com/security-releases.xml", "source": "GitLab Security", "layer": 1},
-    {"url": "https://blogs.cisco.com/security/feed", "source": "Cisco Security Blog", "layer": 1},
-    {"url": "https://blog.cloudflare.com/tag/security/rss", "source": "Cloudflare Security", "layer": 1},
-    {"url": "https://www.microsoft.com/security/blog/feed/", "source": "Microsoft Security Blog", "layer": 1},
+import json
+import os
 
-    # Layer 2: Breaking News & Disclosure Velocity (Novos sugeridos)
-    {"url": "https://www.bleepingcomputer.com/feed/", "source": "BleepingComputer", "layer": 2},
-    {"url": "https://feeds.feedburner.com/TheHackersNews", "source": "TheHackerNews", "layer": 2},
-    {"url": "https://feeds.feedburner.com/Securityweek", "source": "SecurityWeek", "layer": 2},
-    {"url": "https://therecord.media/feed/", "source": "The Record", "layer": 2},
-    {"url": "https://krebsonsecurity.com/feed/", "source": "Krebs on Security", "layer": 2},
-    {"url": "https://www.cyberscoop.com/feed/", "source": "CyberScoop", "layer": 2},
+RSS_FEEDS: list[dict[str, Any]] = []
 
-    # Layer 3: Threat Intelligence / Research
-    {"url": "https://isc.sans.edu/rssfeed_full.xml", "source": "SANS ISC", "layer": 3},
-    {"url": "https://research.checkpoint.com/feed/", "source": "Check Point Research", "layer": 3},
-    {"url": "https://www.sentinelone.com/labs/feed/", "source": "SentinelOne Labs", "layer": 3},
-    {"url": "https://www.welivesecurity.com/en/rss/feed/", "source": "WeLiveSecurity", "layer": 3},
-    {"url": "https://any.run/cybersecurity-blog/feed/", "source": "ANY.RUN Blog", "layer": 3},
-    {"url": "https://www.elastic.co/security-labs/rss/feed.xml", "source": "Elastic Security", "layer": 3},
-    {"url": "https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v/", "source": "Mandiant Google", "layer": 3},
-    {"url": "https://www.securonix.com/blog/", "source": "Securonix", "layer": 3, "is_static": True},
+def load_feeds() -> list[dict[str, Any]]:
+    """Carrega a lista de feeds do arquivo JSON de configuração."""
+    global RSS_FEEDS
+    path = config.CTI_FEEDS_PATH
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                RSS_FEEDS = json.load(f)
+            logger.info("Carregados %d feeds CTI de %s", len(RSS_FEEDS), path)
+        except Exception as exc:
+            logger.error("Erro ao carregar feeds CTI: %s. Usando lista vazia.", exc)
+            RSS_FEEDS = []
+    else:
+        logger.warning("Arquivo de feeds CTI não encontrado: %s. Usando lista vazia.", path)
+        RSS_FEEDS = []
+    return RSS_FEEDS
 
-    # Layer 4: Regional Intelligence (LATAM/BR)
-    {"url": "https://www.cisoadvisor.com.br/feed/", "source": "CISO Advisor", "layer": 4},
-    {"url": "https://thehack.com.br/rss/", "source": "The Hack", "layer": 4},
-    {"url": "https://www.convergenciadigital.com.br/feed/", "source": "Convergência Digital", "layer": 4}
-]
+# Inicialização imediata
+load_feeds()
 
 
 
@@ -127,7 +118,7 @@ def _parse_feed(
 
     articles: list[dict[str, Any]] = []
     for entry in feed.entries:
-        article = _parse_entry(entry, source, layer, cutoff)
+        article = _parse_entry(entry, source, layer, cutoff, weight_boost=feed_info.get("weight_boost", 0))
         if article:
             articles.append(article)
 
@@ -144,6 +135,7 @@ def _parse_static_page(feed_info: dict[str, Any], cutoff: datetime) -> list[dict
     url = feed_info["url"]
     source = feed_info["source"]
     layer = feed_info["layer"]
+    weight_boost = feed_info.get("weight_boost", 0)
     
     articles: list[dict[str, Any]] = []
     
@@ -170,6 +162,7 @@ def _parse_static_page(feed_info: dict[str, Any], cutoff: datetime) -> list[dict
                 "summary": "Descoberta via monitoramento estático.",
                 "source": source,
                 "layer": layer,
+                "weight_boost": weight_boost,
                 "date": datetime.now(timezone.utc).isoformat()
             })
             # Pegamos apenas os 3 primeiros para não sobrecarregar
@@ -186,6 +179,7 @@ def _parse_entry(
     source: str,
     layer: int,
     cutoff: datetime,
+    weight_boost: int = 0,
 ) -> dict[str, Any] | None:
     """
     Normaliza uma entrada RSS. Atua como 'Sensor de Descoberta'.
@@ -225,5 +219,6 @@ def _parse_entry(
         "summary": summary[:1000] if summary else "",
         "source": source,
         "layer": layer,
+        "weight_boost": weight_boost,
         "date": pub_date.isoformat(),
     }

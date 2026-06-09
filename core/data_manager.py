@@ -49,8 +49,6 @@ def _parse_sheet(ws: Any, required_headers: list[str]) -> list[dict[str, Any]]:
             col_map[h] = i
 
     data_rows = []
-    from core.utils.security import sanitize_csv_value
-
     for row in rows:
         r = list(row) if row else []
         if not r or not any(r): continue  # Pula linhas completamente vazias
@@ -60,7 +58,7 @@ def _parse_sheet(ws: Any, required_headers: list[str]) -> list[dict[str, Any]]:
         for h in required_headers:
             idx = col_map[h]
             val = r[idx] if idx < len(r) else ""
-            cleaned = sanitize_csv_value(str(val).strip()) if val is not None else ""
+            cleaned = str(val).strip() if val is not None else ""
             item[h] = cleaned
             if cleaned: has_content = True
         
@@ -168,26 +166,15 @@ def get_blacklist() -> list[dict[str, Any]]:
         return list(_blacklist)
 
 
-def force_reload() -> None:
-    """Força recarga do Excel ignorando cache de hash."""
+def force_reload() -> bool:
+    """Força a recarga do inventário local de ativos (ignorando o cache de hash).
+
+    O inventário é lido do arquivo Excel local (`ASSETS_CACHE_PATH`). Alterações
+    no arquivo também são detectadas automaticamente em `get_asset_map()` /
+    `get_blacklist()` via hash. Retorna True se o arquivo existe e foi carregado.
+    """
     global _file_hash
     with _cache_lock:
         _file_hash = ""
     _refresh_if_needed()
-
-
-def sync_assets_from_cloud() -> bool:
-    """
-    Tenta baixar a planilha atualizada da nuvem (SharePoint ou OneDrive).
-    Se tiver sucesso, força a recarga imediata para a memória.
-    Retorna True se houve sucesso no download.
-    """
-    from core.clients.graph_client import download_assets
-    
-    logger.info("Iniciando sincronização de ativos na nuvem...")
-    success = download_assets()
-    if success:
-        logger.info("Download concluído. Forçando recarga in-memory da planilha...")
-        force_reload()
-        return True
-    return False
+    return os.path.exists(config.ASSETS_CACHE_PATH)

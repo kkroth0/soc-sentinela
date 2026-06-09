@@ -1,0 +1,37 @@
+[
+    {"url": "https://www.cisa.gov/cybersecurity-advisories/all.xml", "source": "CISA Advisories", "layer": 1, "weight_boost": 20},
+    {"url": "https://www.cisa.gov/cybersecurity-advisories/ics-advisories.xml", "source": "CISA ICS (OT)", "layer": 1, "weight_boost": 20},
+    {"url": "https://sec.cloudapps.cisco.com/security/center/psirtrss20/CiscoSecurityAdvisory.xml", "source": "Cisco PSIRT", "layer": 1, "weight_boost": 20},
+    {"url": "https://api.msrc.microsoft.com/update-guide/rss", "source": "Microsoft MSRC", "layer": 1, "weight_boost": 20},
+    {"url": "https://ubuntu.com/security/notices/rss.xml", "source": "Ubuntu Security Notices", "layer": 1, "weight_boost": 15},
+    {"url": "https://www.debian.org/security/dsa", "source": "Debian Security (DSA)", "layer": 1, "weight_boost": 15},
+    {"url": "https://access.redhat.com/blogs/766093/feed", "source": "Red Hat Product Security", "layer": 1, "weight_boost": 15},
+    {"url": "https://feeds.feedburner.com/TrendMicroSimplySecurity", "source": "Trend Micro Research", "layer": 3, "weight_boost": 12},
+    {"url": "https://filestore.fortinet.com/fortiguard/rss/ir.xml", "source": "FortiGuard IR", "layer": 1, "weight_boost": 20},
+    {"url": "https://filestore.fortinet.com/fortiguard/rss/outbreakalert.xml", "source": "FortiGuard Outbreak", "layer": 1, "weight_boost": 20},
+    {"url": "https://feeds.feedburner.com/GoogleChromeReleases", "source": "Google Chrome Releases", "layer": 1, "weight_boost": 15},
+    {"url": "https://about.gitlab.com/security-releases.xml", "source": "GitLab Security", "layer": 1, "weight_boost": 20},
+    {"url": "https://blogs.cisco.com/security/feed", "source": "Cisco Security Blog", "layer": 1, "weight_boost": 15},
+    {"url": "https://blog.cloudflare.com/tag/security/rss", "source": "Cloudflare Security", "layer": 1, "weight_boost": 15},
+    {"url": "https://www.microsoft.com/security/blog/feed/", "source": "Microsoft Security Blog", "layer": 1, "weight_boost": 20},
+
+    {"url": "https://www.bleepingcomputer.com/feed/", "source": "BleepingComputer", "layer": 2, "weight_boost": 10},
+    {"url": "https://feeds.feedburner.com/TheHackersNews", "source": "TheHackerNews", "layer": 2, "weight_boost": 10},
+    {"url": "https://feeds.feedburner.com/Securityweek", "source": "SecurityWeek", "layer": 2, "weight_boost": 10},
+    {"url": "https://therecord.media/feed/", "source": "The Record", "layer": 2, "weight_boost": 5},
+    {"url": "https://krebsonsecurity.com/feed/", "source": "Krebs on Security", "layer": 2, "weight_boost": 10},
+    {"url": "https://www.cyberscoop.com/feed/", "source": "CyberScoop", "layer": 2, "weight_boost": 5},
+
+    {"url": "https://isc.sans.edu/rssfeed_full.xml", "source": "SANS ISC", "layer": 3, "weight_boost": 10},
+    {"url": "https://research.checkpoint.com/feed/", "source": "Check Point Research", "layer": 3, "weight_boost": 10},
+    {"url": "https://www.sentinelone.com/labs/feed/", "source": "SentinelOne Labs", "layer": 3, "weight_boost": 5},
+    {"url": "https://www.welivesecurity.com/en/rss/feed/", "source": "WeLiveSecurity", "layer": 3, "weight_boost": 5},
+    {"url": "https://any.run/cybersecurity-blog/feed/", "source": "ANY.RUN Blog", "layer": 3, "weight_boost": 5},
+    {"url": "https://www.elastic.co/security-labs/rss/feed.xml", "source": "Elastic Security", "layer": 3, "weight_boost": 5},
+    {"url": "https://feeds.feedburner.com/threatintelligence/pvexyqv7v0v/", "source": "Mandiant Google", "layer": 3, "weight_boost": 15},
+    {"url": "https://www.securonix.com/blog/", "source": "Securonix", "layer": 3, "weight_boost": 10, "is_static": true},
+
+    {"url": "https://www.cisoadvisor.com.br/feed/", "source": "CISO Advisor", "layer": 4, "weight_boost": 15},
+    {"url": "https://thehack.com.br/rss/", "source": "The Hack", "layer": 4, "weight_boost": 10},
+    {"url": "https://www.convergenciadigital.com.br/feed/", "source": "Convergência Digital", "layer": 4, "weight_boost": 5}
+]

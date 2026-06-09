@@ -17,35 +17,41 @@ NVD_API_KEY: str = os.getenv("NVD_API_KEY", "")
 GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 
 
-# ─── Microsoft Teams ──────────────────────────────────────────────────
-TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
-TEAMS_WEBHOOK_CVE: str = os.getenv("TEAMS_WEBHOOK_CVE", "")
-TEAMS_WEBHOOK_CTI: str = os.getenv("TEAMS_WEBHOOK_CTI", "")
-TEAMS_WEBHOOK_SECRET: str = os.getenv("TEAMS_WEBHOOK_SECRET", "")
+# ─── Telegram Bot ─────────────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID_CVE: str = os.getenv("TELEGRAM_CHAT_ID_CVE", "")
 TELEGRAM_CHAT_ID_CTI: str = os.getenv("TELEGRAM_CHAT_ID_CTI", "")
 
-# ─── Microsoft Graph API (SharePoint) ────────────────────────────────
-GRAPH_TENANT_ID: str = os.getenv("GRAPH_TENANT_ID", "")
-GRAPH_CLIENT_ID: str = os.getenv("GRAPH_CLIENT_ID", "")
-GRAPH_CLIENT_SECRET: str = os.getenv("GRAPH_CLIENT_SECRET", "")
-SHAREPOINT_SITE_URL: str = os.getenv("SHAREPOINT_SITE_URL", "")
-SHAREPOINT_FILE_PATH: str = os.getenv("SHAREPOINT_FILE_PATH", "")
+# Lista de IDs de chat (ou usuários) permitidos para executar comandos.
+# Exemplo no .env: TELEGRAM_ALLOWED_CHATS="-1001234567,98765432"
+_allowed_chats_env = os.getenv("TELEGRAM_ALLOWED_CHATS", "")
+TELEGRAM_ALLOWED_CHATS: list[int] = []
+if _allowed_chats_env:
+    for x in _allowed_chats_env.split(","):
+        x_clean = x.strip()
+        if x_clean.lstrip('-').isdigit():
+            TELEGRAM_ALLOWED_CHATS.append(int(x_clean))
 
-# ─── OneDrive Pessoal (Alternativa ao SharePoint Corporativo) ───────
-ONEDRIVE_DIRECT_URL: str = os.getenv("ONEDRIVE_DIRECT_URL", "")
-
-# ─── E-mail / Power Automate ─────────────────────────────────────────
-EMAIL_FLOW_URL: str = os.getenv("EMAIL_FLOW_URL", "")
-SOC_EMAIL: str = os.getenv("SOC_EMAIL", "")
+# Adiciona os canais de envio de alertas como permitidos por padrão
+for cid in (TELEGRAM_CHAT_ID_CVE, TELEGRAM_CHAT_ID_CTI):
+    if cid and cid.lstrip('-').isdigit():
+        val = int(cid)
+        if val not in TELEGRAM_ALLOWED_CHATS:
+            TELEGRAM_ALLOWED_CHATS.append(val)
 
 # ─── Thresholds e janelas de tempo ────────────────────────────────────
 MIN_CVSS_SCORE: float = float(os.getenv("MIN_CVSS_SCORE", "2.0"))
 TIME_WINDOW_MINUTES: int = int(os.getenv("TIME_WINDOW_MINUTES", "5"))
 NEWS_TIME_WINDOW_MINUTES: int = int(os.getenv("NEWS_TIME_WINDOW_MINUTES", "60"))
+# Intervalo (min) do agendamento do pipeline CVE. A janela de coleta da NVD é
+# sempre >= 24h, então rodar de hora em hora é suficiente e poupa rate-limit.
+CVE_SCHEDULE_MINUTES: int = int(os.getenv("CVE_SCHEDULE_MINUTES", "60"))
+
+# Porta do health server HTTP (usada pelo Docker HEALTHCHECK / DO App Platform).
+HEALTH_PORT: int = int(os.getenv("COMMAND_PORT", os.getenv("HEALTH_PORT", "8765")))
 CISA_KEV_CACHE_HOURS: int = int(os.getenv("CISA_KEV_CACHE_HOURS", "24"))
 MAX_CVE_AGE_DAYS: int = int(os.getenv("MAX_CVE_AGE_DAYS", "30"))
+MIN_CTI_SCORE: int = int(os.getenv("MIN_CTI_SCORE", "40"))
 
 # ─── Caminhos de arquivo — sempre absolutos ──────────────────────────
 BOT_DB_PATH: str = os.path.abspath(
@@ -57,20 +63,22 @@ ASSETS_CACHE_PATH: str = os.path.abspath(
 VENDOR_ALIASES_PATH: str = os.path.abspath(
     os.path.join(BASE_DIR, "data", "vendor_aliases.json")
 )
+VENDOR_ADVISORIES_PATH: str = os.path.abspath(
+    os.getenv("VENDOR_ADVISORIES_PATH", os.path.join(BASE_DIR, "data", "vendor_advisories.json"))
+)
 CTI_CATEGORIES_PATH: str = os.path.abspath(
     os.path.join(BASE_DIR, "data", "cti_categories.json")
 )
+CTI_FEEDS_PATH: str = os.path.abspath(
+    os.getenv("CTI_FEEDS_PATH", os.path.join(BASE_DIR, "data", "cti_feeds.json"))
+)
 
-# ─── Servidor de comandos ────────────────────────────────────────────
-COMMAND_PORT: int = int(os.getenv("COMMAND_PORT", "8765"))
 
-# ─── URLs base de APIs externas (não configuráveis via env) ──────────
+
+# ─── URLs base de APIs externas ────────────────────────────────────
 NVD_BASE_URL: str = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 EPSS_BASE_URL: str = "https://api.first.org/data/v1/epss"
 CISA_KEV_URL: str = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
-
-# Detecta se é API Free (:fx no final) ou Pro para setar a URL correta
-GRAPH_BASE_URL: str = "https://graph.microsoft.com/v1.0"
 GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
 GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -96,7 +104,11 @@ PROMPT_NEWS_INTEL: str = (
     "Sua missão é gerar um relatório técnico conciso e EXTRAIR TODOS OS IoCs (Hashes, IPs, Domínios).\n\n"
     "ESTRUTURA DO JSON:\n"
     "1. 'title_pt': Título traduzido de forma profissional.\n"
-    "2. 'summary_pt': DOIS PARÁGRAFOS técnicos separados OBRIGATORIAMENTE por \\n\\n. O primeiro deve descrever a ameaça e o segundo as medidas de mitigação.\n"
+    "2. 'summary_pt': DOIS PARÁGRAFOS separados OBRIGATORIAMENTE por \\n\\n. "
+    "O 1º descreve, de forma técnica, O QUE aconteceu (a ameaça, o incidente ou o fato). "
+    "O 2º depende do tipo da notícia: se for vulnerabilidade/incidente, traga o IMPACTO e as MEDIDAS DE MITIGAÇÃO; "
+    "se for notícia de mercado, regulatória, geopolítica ou regional (sem ameaça técnica direta), traga a RELEVÂNCIA ESTRATÉGICA — por que isso importa para uma operação de SOC/CTI. "
+    "NUNCA invente medidas de mitigação para fatos que não são incidentes técnicos.\n"
     "3. 'iocs_pt': Um objeto JSON com as chaves 'IPs', 'Domínios' e 'Hashes'. Extraia categorizadamente todos os IPs, Domínios e Hashes (MD5/SHA) encontrados. "
     "Muitos sites listam isso sob os títulos 'C2 and Infrastructure' ou 'Analyzed files/hashes'. "
     "Extraia TUDO o que for indicador técnico. Se não houver nenhum, escreva 'Nenhum IoC identificado'.\n\n"
@@ -114,21 +126,12 @@ def validate_config() -> None:
     if not GROQ_API_KEY:
         raise ValueError("ERRO CRÍTICO: GROQ_API_KEY ausente no .env")
 
-    # Precisamos de pelo menos UM notificador configurado (Teams ou Telegram)
-    has_teams = any([TEAMS_WEBHOOK_URL, TEAMS_WEBHOOK_CVE, TEAMS_WEBHOOK_CTI])
-    has_telegram = all([TELEGRAM_BOT_TOKEN, any([TELEGRAM_CHAT_ID_CVE, TELEGRAM_CHAT_ID_CTI])])
-    
-    if not has_teams and not has_telegram:
-        raise ValueError("ERRO CRÍTICO: Nenhum canal de notificação configurado (Teams ou Telegram)")
-    
-    if not TEAMS_WEBHOOK_SECRET:
-        from core.logger import get_logger
-        get_logger("config").warning("⚠️ TEAMS_WEBHOOK_SECRET não configurado. Servidor de comandos operando em MODO INSEGURO.")
-    
-    # Validar formato básico das URLs
-    for url_name, url in [("Global", TEAMS_WEBHOOK_URL), ("CVE", TEAMS_WEBHOOK_CVE), ("CTI", TEAMS_WEBHOOK_CTI)]:
-        if url and not url.startswith("https://"):
-            raise ValueError(f"ERRO CRÍTICO: TEAMS_WEBHOOK_{url_name} deve começar com https://")
+    # Precisamos do Telegram Bot Token configurado
+    if not TELEGRAM_BOT_TOKEN:
+        raise ValueError("ERRO CRÍTICO: TELEGRAM_BOT_TOKEN ausente no .env")
+        
+    if not TELEGRAM_CHAT_ID_CTI:
+        raise ValueError("ERRO CRÍTICO: TELEGRAM_CHAT_ID_CTI ausente no .env")
 
     # Garante que os diretórios de dados existam
     os.makedirs(os.path.dirname(BOT_DB_PATH), exist_ok=True)

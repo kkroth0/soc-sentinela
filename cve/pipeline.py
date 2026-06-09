@@ -7,12 +7,12 @@ import config
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from core import storage
 from core.models import StandardCVEAlert
-from core.notifications import global_dispatcher
-from core.notifications.base import BaseNotifier
+from core.notifications import telegram_dispatcher
+from core.notifications.telegram_notifier import TelegramNotifier
 from core.data_manager import get_asset_map, get_blacklist
 from core.logger import get_logger
 from core.clients import groq_engine
-from cve import asset_matcher, nvd_client, risk_scorer
+from cve import asset_matcher, nvd_client, risk_scorer, advisories
 
 logger = get_logger("cve.pipeline")
 
@@ -55,7 +55,7 @@ def _process_single_cve(
     cve: dict[str, Any],
     normalized_assets: list[dict[str, Any]],
     blacklist: list[dict[str, Any]],
-    notifier: BaseNotifier,
+    notifier: TelegramNotifier,
     db_module: Any = storage
 ) -> tuple[bool, str]:
     """Processa uma única CVE e envia via notificador injetado."""
@@ -83,6 +83,9 @@ def _process_single_cve(
             in_cisa_kev=cve.get("in_cisa_kev", False),
             has_exploit_db=cve.get("has_known_exploit", False),
             headline=cve.get("headline_pt", ""),
+            cwes=cve.get("cwes", []),
+            threats=cve.get("threats", []),
+            advisory_url=advisories.get_advisory_url(cve.get("vendor", ""), cve_id),
             raw_payload=cve
         )
 
@@ -102,7 +105,7 @@ def _process_single_cve(
 
 
 def run(
-    notifier: BaseNotifier = global_dispatcher,
+    notifier: TelegramNotifier = telegram_dispatcher,
     db_module: Any = storage
 ) -> dict[str, int]:
     """Executa o pipeline CVE com injeção de dependências."""

@@ -87,3 +87,4 @@ def get_cves_for_month(year_month: str) -> list[dict[str, Any]]:
             (f"{year_month}%",)
         ).fetchall()
         return [dict(row) for row in rows]
+

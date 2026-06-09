@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import pytest
+import threading
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
 
@@ -15,38 +16,50 @@ class TestNvdClient:
     @patch("cve.nvd_client.http_client.get")
     def test_fetch_cves_pagination(self, mock_get):
         """Testa se o cliente faz paginação corretamente até buscar todos os resultados."""
-        # Mock de 3 páginas: 50 + 50 + 20 = 120 resultados totais
+        # Mock de 2 páginas: 100 + 20 = 120 resultados totais
         
-        # Página 1
+        probe_response = {
+            "totalResults": 120,
+            "vulnerabilities": [{"cve": {"id": "CVE-2026-probe", "metrics": {}}}]
+        }
         page1 = {
             "totalResults": 120,
-            "vulnerabilities": [{"cve": {"id": f"CVE-2026-{i}", "metrics": {}}} for i in range(50)]
+            "vulnerabilities": [{"cve": {"id": f"CVE-2026-{i}", "metrics": {}}} for i in range(100)]
         }
-        # Página 2
         page2 = {
-            "totalResults": 120,
-            "vulnerabilities": [{"cve": {"id": f"CVE-2026-{i}", "metrics": {}}} for i in range(50, 100)]
-        }
-        # Página 3
-        page3 = {
             "totalResults": 120,
             "vulnerabilities": [{"cve": {"id": f"CVE-2026-{i}", "metrics": {}}} for i in range(100, 120)]
         }
 
-        indices_chamados = []
+        calls_dict = {}
+        calls_lock = threading.Lock()
+
         def capture_params(*args, **kwargs):
-            indices_chamados.append(kwargs.get('params', {}).get('startIndex'))
-            return MagicMock(status_code=200, json=lambda: [page1, page2, page3][len(indices_chamados)-1])
+            params = kwargs.get('params', {})
+            r_per_page = params.get('resultsPerPage')
+            start_idx = params.get('startIndex', 0)
+            
+            with calls_lock:
+                calls_dict[start_idx] = calls_dict.get(start_idx, 0) + 1
+            
+            if r_per_page == 1:
+                return MagicMock(status_code=200, json=lambda: probe_response)
+            elif start_idx == 0:
+                return MagicMock(status_code=200, json=lambda: page1)
+            elif start_idx == 100:
+                return MagicMock(status_code=200, json=lambda: page2)
+            else:
+                return MagicMock(status_code=200, json=lambda: {"totalResults": 120, "vulnerabilities": []})
 
         mock_get.side_effect = capture_params
 
-        with patch("cve.nvd_client.time.sleep"): # Evitar delays no teste
+        with patch("cve.nvd_client.time.sleep"), patch("cve.nvd_client.storage") as mock_storage:
             results = fetch_recent_cves(time_window_minutes=60)
 
         assert len(results) == 120
         assert mock_get.call_count == 3
-        # Verifica se o startIndex incrementou corretamente
-        assert indices_chamados == [0, 50, 100]
+        assert 100 in calls_dict
+        assert 0 in calls_dict
 
     def test_parse_cve_minimal_data(self):
         """Testa o parse de uma CVE com dados mínimos."""
@@ -110,7 +123,9 @@ class TestNvdClient:
     @patch("cve.nvd_client.http_client.get")
     def test_nvd_api_json_decode_error_skip(self, mock_get):
         """Testa se o cliente pula páginas com JSON quebrado e extrai o totalResults via regex."""
-        # 2 páginas: página 1 tem JSON quebrado, página 2 é válida
+        probe_response = MagicMock(status_code=200)
+        probe_response.json.return_value = {"totalResults": 60}
+
         page2 = {
             "totalResults": 60,
             "vulnerabilities": [{"cve": {"id": f"CVE-2026-{i}", "metrics": {}}} for i in range(30, 60)]
@@ -119,21 +134,41 @@ class TestNvdClient:
         def mock_json_decode_error():
             raise json.JSONDecodeError("Expecting value", "", 0)
 
-        # Mock page 1 to raise JSONDecodeError, Mock page 2 to return valid JSON
         mock_response_1 = MagicMock(status_code=200, text='{"totalResults": 60, "vul')
         mock_response_1.json.side_effect = mock_json_decode_error
         
         mock_response_2 = MagicMock(status_code=200, text=json.dumps(page2))
         mock_response_2.json.return_value = page2
 
-        mock_get.side_effect = [mock_response_1, mock_response_2]
+        # Temporariamente ajustar o tamanho da página para bater com o mock
+        import cve.nvd_client
+        original_page_size = cve.nvd_client._RESULTS_PER_PAGE
+        cve.nvd_client._RESULTS_PER_PAGE = 30
 
-        with patch("cve.nvd_client.time.sleep"):
-            # O mock de configuração deve ser garantido caso outros testes o tenham mudado,
-            # mas podemos apenas rodar.
-            results = fetch_recent_cves(time_window_minutes=60)
+        def capture_params(*args, **kwargs):
+            params = kwargs.get('params', {})
+            r_per_page = params.get('resultsPerPage')
+            start_idx = params.get('startIndex', 0)
+            
+            if r_per_page == 1:
+                return probe_response
+            elif start_idx == 0:
+                return mock_response_1
+            elif start_idx == 30:
+                return mock_response_2
+            else:
+                empty_response = MagicMock(status_code=200)
+                empty_response.json.return_value = {"totalResults": 60, "vulnerabilities": []}
+                return empty_response
+
+        mock_get.side_effect = capture_params
+
+        try:
+            with patch("cve.nvd_client.time.sleep"), patch("cve.nvd_client.storage"):
+                results = fetch_recent_cves(time_window_minutes=60)
+        finally:
+            cve.nvd_client._RESULTS_PER_PAGE = original_page_size
 
         # Deve ter pulado a primeira página (perdendo 30), mas pegado a segunda página com 30 itens.
         assert len(results) == 30
-        assert mock_get.call_count == 2
-
+        assert mock_get.call_count == 8
