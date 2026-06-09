@@ -90,9 +90,9 @@ def _process_single_article(
 
         logger.info("Artigo APROVADO (Score: %d) — %s [Motivos: %s]", score, title, ", ".join(reasons))
 
-        # Deep Fetch via Scraper injetado
+        # Deep Fetch via Scraper injetado (sink=article coleta as referências)
         if not article.get("full_content"):
-            article["full_content"] = scraper.fetch_content(url)
+            article["full_content"] = scraper.fetch_content(url, sink=article)
 
         # Processamento ÚNICO de IA (Tradução + Resumo) via motor unificado
         groq_engine.process_news_intelligence(article)
@@ -148,7 +148,8 @@ def _process_single_article(
             cves=cves_enriched,
             sectors=sectors,
             countries=countries,
-            ttps=ttps
+            ttps=ttps,
+            references=article.get("references", [])
         )
         
         # Envio via notificador injetado

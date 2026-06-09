@@ -5,6 +5,7 @@ Focado em extrair o conteúdo principal de notícias e burlar anti-bots.
 
 import re
 from typing import Any
+from urllib.parse import urlparse
 from scrapling.fetchers import StealthyFetcher, Fetcher
 from core.logger import get_logger
 
@@ -13,15 +14,57 @@ from core.logger import get_logger
 
 logger = get_logger("cti.scrapling")
 
+# Padrões de links que NÃO são referências (botões de compartilhar, tracking, etc.)
+_SHARE_NOISE = (
+    "/intent/", "/sharer", "/share?", "sharer.php", "/submit", "mailto:",
+    "wa.me", "api.whatsapp", "//t.co/", "/cdn-cgi/", "javascript:",
+    "/tag/", "/category/", "/author/", "/feed", "utm_",
+)
+
+
+def _extract_references(blocks: list[Any], base_url: str, limit: int = 6) -> list[str]:
+    """Extrai links EXTERNOS citados no corpo do artigo (fontes/referências).
+
+    Descarta links internos (mesmo domínio), botões de compartilhar e tracking.
+    """
+    base_dom = urlparse(base_url).netloc.lower().replace("www.", "")
+    seen: set[str] = set()
+    refs: list[str] = []
+    for block in blocks:
+        try:
+            hrefs = block.css("a::attr(href)").getall()
+        except Exception:
+            continue
+        for h in hrefs:
+            h = (h or "").strip()
+            if not h.startswith("http"):
+                continue
+            dom = urlparse(h).netloc.lower().replace("www.", "")
+            if not dom or dom == base_dom:          # link interno ao próprio site
+                continue
+            low = h.lower()
+            if any(n in low for n in _SHARE_NOISE):  # share/tracking/navegação
+                continue
+            if h in seen:
+                continue
+            seen.add(h)
+            refs.append(h)
+            if len(refs) >= limit:
+                return refs
+    return refs
+
 class ScraplingClient(BaseScraper):
     def __init__(self):
         # Aqui poderíamos inicializar um pool se necessário
         pass
 
-    def fetch_content(self, url: str) -> str:
+    def fetch_content(self, url: str, sink: dict[str, Any] | None = None) -> str:
         """
-        Visita o site e extrai o conteúdo principal. 
+        Visita o site e extrai o conteúdo principal.
         Tenta primeiro com Fetcher (rápido) e se falhar/bloquear tenta StealthyFetcher.
+
+        Se ``sink`` for fornecido, popula ``sink['references']`` com os links
+        externos citados no corpo do artigo (thread-safe: usa o dict do artigo).
         """
         logger.info("Iniciando raspagem profunda para: %s", url)
         
@@ -74,7 +117,17 @@ class ScraplingClient(BaseScraper):
                 best_text = best_text[:5000] + "\n[... TRUNCADO ...] \n" + best_text[-15000:]
             
             best_text = re.sub(r'\s+', ' ', best_text).strip()
-            
+
+            # Coleta de referências (links externos citados no corpo)
+            if sink is not None:
+                try:
+                    refs = _extract_references(content_blocks, url)
+                    if refs:
+                        sink["references"] = refs
+                        logger.info("Referências coletadas: %d link(s) externo(s).", len(refs))
+                except Exception as exc:
+                    logger.debug("Falha ao coletar referências de %s: %s", url, exc)
+
             logger.info("Raspagem concluída. Extraídos %d caracteres.", len(best_text))
             return best_text
             

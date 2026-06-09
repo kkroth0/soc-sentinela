@@ -43,3 +43,4 @@ class StandardCTINews:
     sectors: list[str] = field(default_factory=list)
     countries: list[str] = field(default_factory=list)
     ttps: list[str] = field(default_factory=list)
+    references: list[str] = field(default_factory=list)

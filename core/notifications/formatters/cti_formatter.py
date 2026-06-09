@@ -11,6 +11,7 @@ notícias que não são incidentes técnicos.
 
 import html
 from typing import Any
+from urllib.parse import urlparse
 
 from core.logger import get_logger
 from core.models import StandardCTINews
@@ -73,6 +74,7 @@ def _coerce_news(news_input: Any) -> StandardCTINews:
             sectors=news_input.get("sectors", []),
             countries=news_input.get("countries", []),
             ttps=news_input.get("ttps", []),
+            references=news_input.get("references", []),
         )
     raise TypeError(f"Entrada inválida para o formatter CTI: {type(news_input)!r}")
 
@@ -171,6 +173,14 @@ def build_news_telegram_message(news_input: Any) -> str:
     # ── Link (hyperlink limpo em vez de URL crua) ──
     if news.url:
         parts.append(f'🔗 <a href="{url}">Abrir fonte original</a>')
+
+    # ── Referências citadas no corpo (fontes externas) ──
+    if news.references:
+        ref_lines = ["📎 <b>Referências citadas:</b>"]
+        for i, ref in enumerate(news.references[:6], 1):
+            dom = urlparse(ref).netloc.replace("www.", "") or "link"
+            ref_lines.append(f'  {i}. <a href="{html.escape(ref)}">{html.escape(dom)}</a>')
+        parts.append("\n".join(ref_lines))
 
     # ── Rodapé de relevância ──
     if news.score and news.score > 0:
