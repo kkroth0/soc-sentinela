@@ -1,6 +1,6 @@
 """
 commands/telegram_bot.py — Escuta nativa de comandos via Telegram Bot API (Long Polling).
-Comandos suportados: /start, /help, /status, /iniciar, /cti, /cves, /ativos, /recarregar
+Comandos suportados: /start, /help, /status, /iniciar, /cti, /cves, /patchtuesday, /ativos, /recarregar
 """
 
 import threading
@@ -145,6 +145,8 @@ class TelegramBotListener:
                 self._handle_sync_ativos(chat_id)
             elif command == "/recarregar":
                 self._handle_recarregar(chat_id)
+            elif command in ("/patchtuesday", "/patch"):
+                self._handle_patch_tuesday(chat_id)
             else:
                 self._send_reply(chat_id, f"❓ <b>Comando desconhecido:</b> {command}\nDigite /help para listar comandos.")
         except Exception as e:
@@ -161,6 +163,7 @@ class TelegramBotListener:
             "🔹 `/iniciar` — Executa manualmente a varredura e análise de CTI.\n"
             "🔹 `/cti` ou `/latest` — Exibe as 10 últimas notícias CTI registradas.\n"
             "🔹 `/cves` — Exibe as 10 últimas CVEs priorizadas.\n"
+            "🔹 `/patchtuesday` — Gera e envia o relatório do Patch Tuesday do mês (MSRC).\n"
             "🔹 `/ativos` — Recarrega o inventário local de ativos monitorados.\n"
             "🔹 `/recarregar` — Atualiza categorias CTI e aliases em memória.\n"
             "🔹 `/help` — Mostra esta lista de ajuda.\n\n"
@@ -272,6 +275,36 @@ class TelegramBotListener:
                 self._send_reply(chat_id, f"❌ <b>Falha ao recarregar ativos:</b> {html.escape(str(e))}")
 
         threading.Thread(target=sync_async, name="telegram-assets-reload", daemon=True).start()
+
+    def _handle_patch_tuesday(self, chat_id: int) -> None:
+        """Dispara manualmente o relatório de Patch Tuesday do mês atual."""
+        def run_async() -> None:
+            from cve import msrc_client
+            from reports import patch_tuesday
+
+            doc_id = msrc_client.get_patch_tuesday_doc_id()
+            self._send_reply(
+                chat_id,
+                f"🩹 <b>Gerando relatório de Patch Tuesday ({html.escape(doc_id)})...</b>\n"
+                "<i>Coletando o documento MSRC e montando os anexos — pode levar alguns segundos.</i>",
+            )
+            try:
+                # force=True: envio manual intencional (ignora guarda de duplicidade).
+                # poll=False: se o documento do mês ainda não foi publicado, falha rápido.
+                sent = patch_tuesday.run_patch_tuesday(force=True, poll=False)
+                if sent:
+                    self._send_reply(chat_id, "✅ <b>Relatório de Patch Tuesday enviado!</b>")
+                else:
+                    self._send_reply(
+                        chat_id,
+                        f"⚠️ <b>Não foi possível gerar o relatório.</b>\n"
+                        f"O documento <code>{html.escape(doc_id)}</code> pode ainda não ter sido "
+                        "publicado pela Microsoft, ou houve falha no envio. Verifique os logs.",
+                    )
+            except Exception as e:
+                self._send_reply(chat_id, f"❌ <b>Erro ao gerar Patch Tuesday:</b> {html.escape(str(e))}")
+
+        threading.Thread(target=run_async, name="telegram-patch-tuesday", daemon=True).start()
 
     def _handle_recarregar(self, chat_id: int) -> None:
         try:

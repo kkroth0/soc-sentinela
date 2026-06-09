@@ -35,3 +35,36 @@ def send_message(chat_id: str, text: str, parse_mode: str = "HTML") -> bool:
     except requests.exceptions.RequestException as e:
         logger.error("Failed to send message to Telegram: %s", e)
         return False
+
+
+def send_document(
+    chat_id: str,
+    file_path: str,
+    caption: str = "",
+    parse_mode: str = "HTML",
+) -> bool:
+    """
+    Envia um arquivo (PDF, CSV, etc.) como documento para o chat do Telegram.
+    Retorna True se sucesso, False caso contrário.
+    """
+    if not config.TELEGRAM_BOT_TOKEN or not chat_id:
+        logger.debug("Telegram credentials not configured. Skipping document upload.")
+        return False
+
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendDocument"
+    # Caption do Telegram tem limite de 1024 caracteres.
+    data = {"chat_id": chat_id, "parse_mode": parse_mode}
+    if caption:
+        data["caption"] = caption[:1024]
+
+    try:
+        session = get_session()
+        with open(file_path, "rb") as fh:
+            files = {"document": (file_path.rsplit("/", 1)[-1], fh, "application/octet-stream")}
+            response = session.post(url, data=data, files=files, timeout=60)
+        response.raise_for_status()
+        logger.info("Document sent successfully via Telegram to %s.", chat_id)
+        return True
+    except (requests.exceptions.RequestException, OSError) as e:
+        logger.error("Failed to send document to Telegram: %s", e)
+        return False

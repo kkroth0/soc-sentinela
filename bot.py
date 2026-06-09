@@ -17,6 +17,7 @@ from core.logger import get_logger
 from cti import pipeline as cti_pipeline
 from cve import pipeline as cve_pipeline
 from reports import reporter
+from reports import patch_tuesday
 
 logger = get_logger("bot")
 
@@ -105,6 +106,17 @@ def main() -> None:
     scheduler.add_job(cve_pipeline.run, "interval", minutes=config.CVE_SCHEDULE_MINUTES, next_run_time=now, id="cve_pipeline", name="Pipeline CVE", max_instances=1, coalesce=True)
     scheduler.add_job(reporter.run_weekly_report, "cron", day_of_week="mon", hour=8, minute=0, id="weekly_report", name="Relatório Semanal", max_instances=1)
     scheduler.add_job(reporter.run_monthly_report, "cron", day=1, hour=8, minute=0, id="monthly_report", name="Relatório Mensal", max_instances=1)
+
+    # Patch Tuesday: 2ª terça do mês (único dia 8–14 que cai numa terça).
+    # Dispara logo após a publicação MSRC (~17-18h UTC); o coletor faz poll
+    # caso o documento ainda não esteja no ar.
+    if config.PATCH_TUESDAY_ENABLED:
+        scheduler.add_job(
+            patch_tuesday.run_patch_tuesday, "cron",
+            day="8-14", day_of_week="tue",
+            hour=config.PATCH_TUESDAY_HOUR, minute=config.PATCH_TUESDAY_MINUTE,
+            id="patch_tuesday", name="Relatório Patch Tuesday", max_instances=1, coalesce=True,
+        )
 
     # ── 5. Carga inicial do inventário local de ativos ────────────────
     logger.info("Carregando inventário local de ativos antes dos pipelines...")

@@ -21,6 +21,10 @@ GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID_CVE: str = os.getenv("TELEGRAM_CHAT_ID_CVE", "")
 TELEGRAM_CHAT_ID_CTI: str = os.getenv("TELEGRAM_CHAT_ID_CTI", "")
+# Canal do relatório de Patch Tuesday. Se vazio, cai no canal de CVE (ou CTI).
+TELEGRAM_CHAT_ID_PATCH: str = (
+    os.getenv("TELEGRAM_CHAT_ID_PATCH", "") or TELEGRAM_CHAT_ID_CVE or TELEGRAM_CHAT_ID_CTI
+)
 
 # Lista de IDs de chat (ou usuários) permitidos para executar comandos.
 # Exemplo no .env: TELEGRAM_ALLOWED_CHATS="-1001234567,98765432"
@@ -80,6 +84,31 @@ NVD_BASE_URL: str = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 EPSS_BASE_URL: str = "https://api.first.org/data/v1/epss"
 CISA_KEV_URL: str = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
+
+# ─── MSRC / Patch Tuesday (CVRF v3.0) ────────────────────────────────
+# Documento mensal da Microsoft no formato YYYY-Mon (ex.: 2026-Jun).
+MSRC_CVRF_BASE_URL: str = "https://api.msrc.microsoft.com/cvrf/v3.0/cvrf"
+MSRC_UPDATES_URL: str = "https://api.msrc.microsoft.com/cvrf/v3.0/updates"
+MSRC_UPDATE_GUIDE_URL: str = "https://msrc.microsoft.com/update-guide/vulnerability"
+# Habilita o job mensal de Patch Tuesday.
+PATCH_TUESDAY_ENABLED: bool = os.getenv("PATCH_TUESDAY_ENABLED", "true").lower() in ("1", "true", "yes")
+# Horário (UTC) da 2ª terça em que o job dispara. A MSRC publica ~17-18h UTC.
+PATCH_TUESDAY_HOUR: int = int(os.getenv("PATCH_TUESDAY_HOUR", "18"))
+PATCH_TUESDAY_MINUTE: int = int(os.getenv("PATCH_TUESDAY_MINUTE", "30"))
+# Poll: se o documento do mês ainda não estiver publicado, tenta de novo.
+MSRC_FETCH_RETRIES: int = int(os.getenv("MSRC_FETCH_RETRIES", "8"))
+MSRC_FETCH_RETRY_SLEEP: int = int(os.getenv("MSRC_FETCH_RETRY_SLEEP", "300"))
+# Formatos do anexo com a listagem completa de CVEs: pdf, csv, xlsx (lista).
+_patch_formats_env = os.getenv("PATCH_TUESDAY_FORMATS", "pdf")
+PATCH_TUESDAY_FORMATS: list[str] = [
+    fmt.strip().lower()
+    for fmt in _patch_formats_env.split(",")
+    if fmt.strip().lower() in ("pdf", "csv", "xlsx")
+] or ["pdf"]
+# Diretório de saída dos PDFs gerados.
+REPORTS_OUTPUT_DIR: str = os.path.abspath(
+    os.getenv("REPORTS_OUTPUT_DIR", os.path.join(BASE_DIR, "data", "reports"))
+)
 GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
@@ -140,3 +169,4 @@ def validate_config() -> None:
     # Garante que os diretórios de dados existam
     os.makedirs(os.path.dirname(BOT_DB_PATH), exist_ok=True)
     os.makedirs(os.path.dirname(ASSETS_CACHE_PATH), exist_ok=True)
+    os.makedirs(REPORTS_OUTPUT_DIR, exist_ok=True)

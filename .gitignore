@@ -15,6 +15,7 @@ build/
 # Dados de runtime
 data/*.db
 data/*.xlsx
+data/reports/
 *.db
 *.db-wal
 *.db-shm
