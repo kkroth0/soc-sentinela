@@ -191,3 +191,23 @@ def build_news_telegram_message(news_input: Any) -> str:
         parts.append(footer)
 
     return clamp_telegram("\n".join(parts))
+
+
+def build_hunting_telegram_message(news_input: Any) -> str | None:
+    """Monta o card 'SENTINEL HUNTING' com queries KQL (ou None se não houver)."""
+    from cti.hunting import build_sentinel_hunts
+
+    news = _coerce_news(news_input)
+    hunts = build_sentinel_hunts(news)
+    if not hunts:
+        return None
+
+    parts: list[str] = [
+        "🎯 <b>SENTINEL HUNTING</b> · Microsoft Sentinel / Defender XDR",
+        "━━━━━━━━━━━━━━",
+        f"<i>{html.escape(news.title)}</i>\n",
+    ]
+    for i, h in enumerate(hunts, 1):
+        parts.append(f"<b>{i}. {html.escape(h['title'])}</b>")
+        parts.append(f"<pre>{html.escape(h['kql'])}</pre>")
+    return clamp_telegram("\n".join(parts))

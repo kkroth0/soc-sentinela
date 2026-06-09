@@ -11,7 +11,10 @@ from core.clients.telegram_client import send_message, send_document
 from core.logger import get_logger
 
 from core.notifications.formatters.cve_formatter import build_cve_telegram_message
-from core.notifications.formatters.cti_formatter import build_news_telegram_message
+from core.notifications.formatters.cti_formatter import (
+    build_news_telegram_message,
+    build_hunting_telegram_message,
+)
 from core.notifications.formatters.report_formatter import (
     build_weekly_report_telegram,
     build_monthly_report_telegram,
@@ -37,7 +40,13 @@ class TelegramNotifier:
         if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID_CTI:
             return False
         html_msg = build_news_telegram_message(news)
-        return send_message(config.TELEGRAM_CHAT_ID_CTI, html_msg, parse_mode="HTML")
+        ok = send_message(config.TELEGRAM_CHAT_ID_CTI, html_msg, parse_mode="HTML")
+
+        # Card complementar de Threat Hunting (KQL p/ Microsoft Sentinel), se houver
+        hunt_msg = build_hunting_telegram_message(news)
+        if hunt_msg:
+            send_message(config.TELEGRAM_CHAT_ID_CTI, hunt_msg, parse_mode="HTML")
+        return ok
 
     def send_report(self, stats: dict[str, Any], report_type: str) -> bool:
         chat_id = config.TELEGRAM_CHAT_ID_CTI or config.TELEGRAM_CHAT_ID_CVE
