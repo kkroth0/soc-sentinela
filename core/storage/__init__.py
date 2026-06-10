@@ -6,6 +6,7 @@ from core.storage.database import init_db, close_db, get_connection, get_connect
 from core.storage.persistence import (
     acquire_cve_lock, release_cve_lock, is_cve_sent, save_cve,
     acquire_news_lock, release_news_lock, is_news_sent, save_news,
+    save_pptx_payload, get_pptx_payload,
     save_weekly_summary, save_monthly_summary,
     get_state, set_state, cleanup_old_data
 )
@@ -17,6 +18,7 @@ __all__ = [
     "init_db", "close_db", "get_connection", "_get_connection",
     "acquire_cve_lock", "release_cve_lock", "is_cve_sent", "save_cve",
     "acquire_news_lock", "release_news_lock", "is_news_sent", "save_news",
+    "save_pptx_payload", "get_pptx_payload",
     "save_weekly_summary", "save_monthly_summary",
     "get_state", "set_state", "cleanup_old_data",
     "get_report_stats", "get_recent_cves", "get_recent_news", "get_cves_for_month"

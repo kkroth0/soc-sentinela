@@ -87,6 +87,33 @@ def save_news(article: dict[str, Any], status: str = "SENT") -> None:
         except Exception as exc:
             logger.error("Erro ao gravar notícia: %s", exc)
 
+def save_pptx_payload(token: str, payload: dict[str, Any]) -> None:
+    """Guarda o payload (StandardCTINews serializado) para gerar o PPTX sob demanda."""
+    now = now_iso()
+    payload_json = json.dumps(payload, default=str)
+    with _db_lock:
+        conn = get_connection()
+        try:
+            with conn:
+                conn.execute(
+                    "INSERT OR REPLACE INTO pptx_payloads (token, payload_json, created_at) VALUES (?, ?, ?)",
+                    (token, payload_json, now)
+                )
+        except Exception as exc:
+            logger.error("Erro ao gravar payload PPTX: %s", exc)
+
+def get_pptx_payload(token: str) -> dict[str, Any] | None:
+    """Recupera o payload de um token (ou None se ausente/inválido)."""
+    with _db_lock:
+        conn = get_connection()
+        row = conn.execute("SELECT payload_json FROM pptx_payloads WHERE token = ?", (token,)).fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(row["payload_json"])
+    except Exception:
+        return None
+
 def save_weekly_summary(period_key: str, cve_count: int, news_count: int, critical_count: int, high_count: int) -> None:
     now = now_iso()
     with _db_lock:
@@ -145,6 +172,9 @@ def cleanup_old_data(days: int = 365) -> int:
             with conn:
                 deleted_count += conn.execute("DELETE FROM sent_cves WHERE sent_at < ?", (cutoff_date,)).rowcount
                 deleted_count += conn.execute("DELETE FROM sent_news WHERE sent_at < ?", (cutoff_date,)).rowcount
+                # Payloads de PPTX são efêmeros (botão raramente clicado após dias): retém 30 dias.
+                pptx_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+                deleted_count += conn.execute("DELETE FROM pptx_payloads WHERE created_at < ?", (pptx_cutoff,)).rowcount
             return deleted_count
         except Exception as exc:
             logger.error("Erro na faxina: %s", exc)

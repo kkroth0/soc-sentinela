@@ -18,6 +18,9 @@ openpyxl>=3.1.0
 # Geração de PDF (relatório Patch Tuesday)
 reportlab>=4.0.0
 
+# Geração de PPTX (slide on-demand por feed CTI)
+python-pptx>=0.6.23
+
 # IA / Inteligência (Groq Llama-3)
 groq>=0.5.0
 

@@ -86,6 +86,15 @@ CTI_FEEDS_PATH: str = os.path.abspath(
     os.getenv("CTI_FEEDS_PATH", os.path.join(BASE_DIR, "data", "cti_feeds.json"))
 )
 
+# ─── PPTX on-demand (slide por feed CTI) ──────────────────────────────
+# Template .pptx com os marcadores ({{TITULO}}, {{RESUMO}}, ...). É um asset
+# em data/ (bind-mount), então chega ao droplet sem rebuild. Se ausente, o
+# botão "Gerar PPTX" não é exibido nos cards.
+PPTX_TEMPLATE_PATH: str = os.path.abspath(
+    os.getenv("PPTX_TEMPLATE_PATH", os.path.join(BASE_DIR, "data", "templates", "cti_slide_template.pptx"))
+)
+PPTX_ENABLED: bool = os.getenv("PPTX_ENABLED", "true").lower() in ("1", "true", "yes")
+
 
 
 # ─── URLs base de APIs externas ────────────────────────────────────

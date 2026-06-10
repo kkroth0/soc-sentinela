@@ -87,6 +87,12 @@ def init_db() -> None:
                 value TEXT,
                 updated_at TEXT
             );
+
+            CREATE TABLE IF NOT EXISTS pptx_payloads (
+                token        TEXT PRIMARY KEY,
+                payload_json TEXT,
+                created_at   TEXT
+            );
         """)
         logger.info("Banco de dados inicializado em %s", config.BOT_DB_PATH)
         

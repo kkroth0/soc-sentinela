@@ -2,6 +2,8 @@
 core/notifications/telegram_notifier.py — Notificador Telegram (único canal de saída).
 """
 
+import hashlib
+import os
 from dataclasses import asdict
 from typing import Any
 
@@ -36,11 +38,33 @@ class TelegramNotifier:
         html_msg = build_cve_telegram_message(alert)
         return send_message(chat_id, html_msg, parse_mode="HTML")
 
+    def _pptx_keyboard(self, news: StandardCTINews) -> dict[str, Any] | None:
+        """Botão 'Gerar PPTX' do card: persiste o payload e devolve o teclado.
+
+        Só aparece se o recurso está habilitado e o template existe. O token é
+        derivado da URL (idempotente) e cabe folgado no limite de 64 bytes do
+        callback_data.
+        """
+        if not config.PPTX_ENABLED or not os.path.exists(config.PPTX_TEMPLATE_PATH):
+            return None
+        from core import storage
+        key = news.url or news.title or ""
+        if not key:
+            return None
+        token = hashlib.sha1(key.encode("utf-8")).hexdigest()[:12]
+        try:
+            storage.save_pptx_payload(token, asdict(news))
+        except Exception as exc:
+            logger.warning("Falha ao persistir payload PPTX: %s", exc)
+            return None
+        return {"inline_keyboard": [[{"text": "📊 Gerar PPTX", "callback_data": f"ppt:{token}"}]]}
+
     def send_cti_news(self, news: StandardCTINews) -> bool:
         if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID_CTI:
             return False
         html_msg = build_news_telegram_message(news)
-        ok = send_message(config.TELEGRAM_CHAT_ID_CTI, html_msg, parse_mode="HTML")
+        keyboard = self._pptx_keyboard(news)
+        ok = send_message(config.TELEGRAM_CHAT_ID_CTI, html_msg, parse_mode="HTML", reply_markup=keyboard)
 
         # Card complementar de Threat Hunting (KQL p/ Microsoft Sentinel), se houver
         hunt_msg = build_hunting_telegram_message(news)

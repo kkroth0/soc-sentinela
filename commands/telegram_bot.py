@@ -403,8 +403,41 @@ class TelegramBotListener:
             except ValueError:
                 days = 7
             self._handle_stats(chat_id, str(days))
+        elif data.startswith("ppt:"):
+            self._handle_ppt_generate(chat_id, data.split(":", 1)[1], cb_id)
         else:
             answer_callback_query(cb_id)
+
+    def _handle_ppt_generate(self, chat_id: int, token: str, cb_id: str) -> None:
+        """Gera e envia o slide PPTX de um feed CTI (botão 'Gerar PPTX')."""
+        from core.clients.telegram_client import answer_callback_query, send_document
+        answer_callback_query(cb_id, "Gerando PPTX…")
+
+        def run_async() -> None:
+            import os
+            import re
+            try:
+                from core.models import StandardCTINews
+                from reports.cti_slide_pptx import build_cti_slide
+
+                payload = storage.get_pptx_payload(token)
+                if not payload:
+                    self._send_reply(chat_id, "<b>PPTX:</b> conteúdo expirado ou indisponível.")
+                    return
+                news = StandardCTINews(**payload)
+                safe = re.sub(r"[^A-Za-z0-9_-]+", "_", news.source or "cti")[:30]
+                out_path = os.path.join(config.REPORTS_OUTPUT_DIR, f"cti_{safe}_{token}.pptx")
+                build_cti_slide(news, out_path, config.PPTX_TEMPLATE_PATH)
+                caption = f"📊 {news.title[:200]}" if news.title else "📊 Slide CTI"
+                if not send_document(str(chat_id), out_path, caption=caption):
+                    self._send_reply(chat_id, "<b>PPTX:</b> falha ao enviar o arquivo.")
+            except FileNotFoundError:
+                self._send_reply(chat_id, "<b>PPTX:</b> template não configurado no servidor.")
+            except Exception as e:
+                logger.error("Erro ao gerar PPTX (token %s): %s", token, e, exc_info=True)
+                self._send_reply(chat_id, f"<b>PPTX error:</b> {html.escape(str(e))}")
+
+        threading.Thread(target=run_async, name="ppt-generate", daemon=True).start()
 
     def _handle_cve_lookup(self, chat_id: int, arg: str) -> None:
         """Consulta sob demanda de uma CVE específica (/cve CVE-YYYY-NNNN)."""
