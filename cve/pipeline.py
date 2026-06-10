@@ -165,7 +165,7 @@ def build_single_cve_alert(cve_id: str) -> StandardCVEAlert | None:
     Reutiliza o mesmo caminho do pipeline (NVD → risk_scorer → IA → advisory),
     mas sem a guarda de envio/dedup. Retorna None se a CVE não existir na NVD.
     """
-    cve = nvd_client.fetch_single_cve(cve_id)
+    cve = nvd_client.fetch_single_cve(cve_id, apply_filters=False)
     if not cve:
         return None
 

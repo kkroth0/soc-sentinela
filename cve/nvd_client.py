@@ -130,8 +130,13 @@ def fetch_recent_cves(time_window_minutes: int | None = None) -> list[dict[str, 
     return all_cves
 
 
-def _parse_cve(cve_data: dict[str, Any]) -> dict[str, Any] | None:
-    """Normaliza dados brutos da NVD em estrutura interna."""
+def _parse_cve(cve_data: dict[str, Any], apply_filters: bool = True) -> dict[str, Any] | None:
+    """Normaliza dados brutos da NVD em estrutura interna.
+
+    `apply_filters` aplica os cortes do pipeline (CVSS mínimo e idade máxima).
+    Para consulta sob demanda (/cve) passe False — o analista quer a CVE
+    independentemente de idade/score.
+    """
     cve_id = cve_data.get("id", "")
     if not cve_id:
         return None
@@ -140,18 +145,18 @@ def _parse_cve(cve_data: dict[str, Any]) -> dict[str, Any] | None:
     cvss_score, severity = _extract_cvss(cve_data)
 
     # Filtrar por score mínimo
-    if cvss_score is not None and cvss_score < config.MIN_CVSS_SCORE:
+    if apply_filters and cvss_score is not None and cvss_score < config.MIN_CVSS_SCORE:
         logger.debug("CVE %s ignorada — CVSS %.1f < MIN %.1f", cve_id, cvss_score, config.MIN_CVSS_SCORE)
         return None
 
     # Filtrar por idade de publicação real (evitar alertas falsos de CVEs de 2010 que foram modificadas hoje)
     published_str = cve_data.get("published", "")
-    if published_str:
+    if apply_filters and published_str:
         try:
             pub_date = datetime.fromisoformat(published_str.replace("Z", "+00:00"))
             if pub_date.tzinfo is None:
                 pub_date = pub_date.replace(tzinfo=timezone.utc)
-            
+
             age_days = (datetime.now(timezone.utc) - pub_date).days
             if age_days > config.MAX_CVE_AGE_DAYS:
                 logger.debug("CVE %s ignorada — Publicação original muito antiga (%d dias atrás).", cve_id, age_days)
@@ -258,8 +263,11 @@ def _extract_cwes(cve_data: dict[str, Any]) -> list[str]:
     return sorted(list(cwes))
 
 
-def fetch_single_cve(cve_id: str) -> dict[str, Any] | None:
-    """Busca os detalhes de uma única CVE diretamente da API NVD."""
+def fetch_single_cve(cve_id: str, apply_filters: bool = True) -> dict[str, Any] | None:
+    """Busca os detalhes de uma única CVE diretamente da API NVD.
+
+    `apply_filters=False` ignora os cortes de idade/CVSS (consulta sob demanda).
+    """
     headers = {"apiKey": config.NVD_API_KEY} if config.NVD_API_KEY else {}
     params = {"cveId": cve_id}
     
@@ -274,7 +282,7 @@ def fetch_single_cve(cve_id: str) -> dict[str, Any] | None:
                 vulns = data.get("vulnerabilities", [])
                 if vulns:
                     cve_item = vulns[0].get("cve", {})
-                    return _parse_cve(cve_item)
+                    return _parse_cve(cve_item, apply_filters=apply_filters)
                 return None
             elif resp.status_code == 404:
                 logger.warning("CVE %s não encontrada na NVD (404).", cve_id)
