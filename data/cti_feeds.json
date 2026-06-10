@@ -179,5 +179,119 @@
     "source": "The Hack",
     "layer": 4,
     "weight_boost": 10
+  },
+  {
+    "url": "https://www.darkreading.com/rss.xml",
+    "source": "Dark Reading",
+    "layer": 2,
+    "weight_boost": 10
+  },
+  {
+    "url": "https://www.infosecurity-magazine.com/rss/news/",
+    "source": "Infosecurity Magazine",
+    "layer": 2,
+    "weight_boost": 5
+  },
+  {
+    "url": "https://www.helpnetsecurity.com/feed/",
+    "source": "Help Net Security",
+    "layer": 2,
+    "weight_boost": 10
+  },
+  {
+    "url": "https://blog.talosintelligence.com/feeds/posts/default",
+    "source": "Cisco Talos",
+    "layer": 3,
+    "weight_boost": 15
+  },
+  {
+    "url": "https://unit42.paloaltonetworks.com/feed/",
+    "source": "Palo Alto Unit 42",
+    "layer": 3,
+    "weight_boost": 15
+  },
+  {
+    "url": "https://www.volexity.com/blog/feed/",
+    "source": "Volexity",
+    "layer": 3,
+    "weight_boost": 12
+  },
+  {
+    "url": "https://securelist.com/feed/",
+    "source": "Kaspersky Securelist",
+    "layer": 3,
+    "weight_boost": 12
+  },
+  {
+    "url": "https://www.crowdstrike.com/blog/feed/",
+    "source": "CrowdStrike",
+    "layer": 3,
+    "weight_boost": 12
+  },
+  {
+    "url": "https://securityintelligence.com/feed/",
+    "source": "IBM Security Intelligence",
+    "layer": 3,
+    "weight_boost": 10
+  },
+  {
+    "url": "https://www.proofpoint.com/us/blog/feed",
+    "source": "Proofpoint",
+    "layer": 3,
+    "weight_boost": 10
+  },
+  {
+    "url": "https://googleprojectzero.blogspot.com/feeds/posts/default",
+    "source": "Google Project Zero",
+    "layer": 1,
+    "weight_boost": 20
+  },
+  {
+    "url": "https://packetstormsecurity.com/headlines.xml",
+    "source": "Packet Storm Security",
+    "layer": 1,
+    "weight_boost": 10
+  },
+  {
+    "url": "https://www.exploit-db.com/rss.xml",
+    "source": "Exploit-DB",
+    "layer": 1,
+    "weight_boost": 15
+  },
+  {
+    "url": "https://www.zerodayinitiative.com/rss/published/",
+    "source": "Zero Day Initiative",
+    "layer": 1,
+    "weight_boost": 20
+  },
+  {
+    "url": "https://www.tenable.com/blog/feed",
+    "source": "Tenable",
+    "layer": 1,
+    "weight_boost": 15
+  },
+  {
+    "url": "https://blog.qualys.com/feed",
+    "source": "Qualys",
+    "layer": 1,
+    "weight_boost": 15
+  },
+  {
+    "url": "https://www.sentinelone.com/blog/feed/",
+    "source": "SentinelOne",
+    "layer": 3,
+    "weight_boost": 12
+  },
+  {
+    "url": "https://www.malwarebytes.com/blog/feed/",
+    "source": "Malwarebytes",
+    "layer": 3,
+    "weight_boost": 5
+  },
+  {
+    "url": "https://blog.emsisoft.com/en/feed/",
+    "source": "Emsisoft",
+    "layer": 3,
+    "weight_boost": 5
   }
 ]

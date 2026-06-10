@@ -58,7 +58,12 @@
       "credential theft",
       "c2",
       "c&c",
-      "campanha"
+      "campanha",
+      "lateral movement",
+      "espionage",
+      "cyberespionage",
+      "cyber espionage",
+      "cyber-espionage"
     ]
   },
   "CAT5_GROUPS": {
@@ -81,7 +86,12 @@
       "fin7",
       "ta505",
       "storm-",
-      "unc"
+      "unc",
+      "advanced persistent threat",
+      "nation-state",
+      "nation state",
+      "state-sponsored",
+      "state sponsored"
     ]
   },
   "CAT6_SCALE": {
