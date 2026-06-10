@@ -199,7 +199,7 @@
     "weight_boost": 10
   },
   {
-    "url": "https://blog.talosintelligence.com/feeds/posts/default",
+    "url": "https://blog.talosintelligence.com/rss/",
     "source": "Cisco Talos",
     "layer": 3,
     "weight_boost": 15
@@ -211,7 +211,7 @@
     "weight_boost": 15
   },
   {
-    "url": "https://www.volexity.com/blog/feed/",
+    "url": "https://www.volexity.com/feed/",
     "source": "Volexity",
     "layer": 3,
     "weight_boost": 12
@@ -229,13 +229,7 @@
     "weight_boost": 12
   },
   {
-    "url": "https://securityintelligence.com/feed/",
-    "source": "IBM Security Intelligence",
-    "layer": 3,
-    "weight_boost": 10
-  },
-  {
-    "url": "https://www.proofpoint.com/us/blog/feed",
+    "url": "https://www.proofpoint.com/us/rss.xml",
     "source": "Proofpoint",
     "layer": 3,
     "weight_boost": 10
@@ -245,12 +239,6 @@
     "source": "Google Project Zero",
     "layer": 1,
     "weight_boost": 20
-  },
-  {
-    "url": "https://packetstormsecurity.com/headlines.xml",
-    "source": "Packet Storm Security",
-    "layer": 1,
-    "weight_boost": 10
   },
   {
     "url": "https://www.exploit-db.com/rss.xml",
@@ -275,18 +263,6 @@
     "source": "Qualys",
     "layer": 1,
     "weight_boost": 15
-  },
-  {
-    "url": "https://www.sentinelone.com/blog/feed/",
-    "source": "SentinelOne",
-    "layer": 3,
-    "weight_boost": 12
-  },
-  {
-    "url": "https://www.malwarebytes.com/blog/feed/",
-    "source": "Malwarebytes",
-    "layer": 3,
-    "weight_boost": 5
   },
   {
     "url": "https://blog.emsisoft.com/en/feed/",

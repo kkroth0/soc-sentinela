@@ -108,3 +108,19 @@ class TestShouldAlert:
         success, reason = should_alert(sample_cve, norm, sample_blacklist, db_module=mock_storage)
         assert success is False
         assert reason == "já em processamento"
+
+    def test_linux_kernel_cve_is_suppressed(self, sample_blacklist):
+        """CVE de kernel Linux → suprimida globalmente, antes de tocar o storage."""
+        mock_storage = MagicMock()
+        cve = {
+            "cve_id": "CVE-2026-99999",
+            "vendor": "linux",
+            "product": "linux_kernel",
+            "affected_products": [("linux", "linux_kernel")],
+        }
+        success, reason = should_alert(cve, [], sample_blacklist, db_module=mock_storage)
+        assert success is False
+        assert "suprimido" in reason
+        # Short-circuit: nem dedup nem lock são acionados para itens suprimidos.
+        mock_storage.is_cve_sent.assert_not_called()
+        mock_storage.acquire_cve_lock.assert_not_called()

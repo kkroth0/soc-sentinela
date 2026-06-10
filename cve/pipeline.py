@@ -17,6 +17,31 @@ from cve import asset_matcher, nvd_client, risk_scorer, advisories
 logger = get_logger("cve.pipeline")
 
 
+def _is_suppressed_product(cve: dict[str, Any]) -> bool:
+    """True se o produto afetado está na lista de supressão global (ex.: kernel Linux).
+
+    Verifica o produto primário e todos os pares vendor/produto afetados,
+    normalizados (lowercase, '_' → espaço), contra config.CVE_SUPPRESS_PRODUCTS.
+    """
+    if not config.CVE_SUPPRESS_PRODUCTS:
+        return False
+
+    products: list[str] = []
+    primary = str(cve.get("product", "")).strip().lower().replace("_", " ")
+    if primary:
+        products.append(primary)
+    for _vendor, p in cve.get("affected_products", []):
+        p_clean = str(p).strip().lower().replace("_", " ")
+        if p_clean:
+            products.append(p_clean)
+
+    return any(
+        term in product
+        for term in config.CVE_SUPPRESS_PRODUCTS
+        for product in products
+    )
+
+
 def should_alert(
     cve: dict[str, Any],
     normalized_assets: list[dict[str, Any]],
@@ -25,6 +50,10 @@ def should_alert(
 ) -> tuple[bool, str]:
     """Decide se uma CVE se torna alerta via interface injetada."""
     cve_id = cve.get("cve_id", "")
+
+    if _is_suppressed_product(cve):
+        logger.debug("CVE %s suprimida — produto na lista de supressão global", cve_id)
+        return False, "produto suprimido (ruído de volume)"
 
     if db_module.is_cve_sent(cve_id):
         return False, "já enviada"

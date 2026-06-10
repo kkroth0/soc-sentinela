@@ -57,6 +57,15 @@ CISA_KEV_CACHE_HOURS: int = int(os.getenv("CISA_KEV_CACHE_HOURS", "24"))
 MAX_CVE_AGE_DAYS: int = int(os.getenv("MAX_CVE_AGE_DAYS", "30"))
 MIN_CTI_SCORE: int = int(os.getenv("MIN_CTI_SCORE", "40"))
 
+# Produtos cujos CVEs NUNCA viram alerta no pipeline automático (ruído de
+# altíssimo volume, ex.: kernel Linux com dezenas de CVEs/dia). Match por
+# substring no produto afetado normalizado. A consulta sob demanda (/cve)
+# ignora esta lista — o analista que pediu a CVE quer vê-la.
+_cve_suppress_env = os.getenv("CVE_SUPPRESS_PRODUCTS", "linux kernel")
+CVE_SUPPRESS_PRODUCTS: list[str] = [
+    x.strip().lower() for x in _cve_suppress_env.split(",") if x.strip()
+]
+
 # ─── Caminhos de arquivo — sempre absolutos ──────────────────────────
 BOT_DB_PATH: str = os.path.abspath(
     os.getenv("BOT_DB_PATH", os.path.join(BASE_DIR, "data", "bot_database.db"))
