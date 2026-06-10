@@ -105,12 +105,32 @@ PATCH_TUESDAY_FORMATS: list[str] = [
     for fmt in _patch_formats_env.split(",")
     if fmt.strip().lower() in ("pdf", "csv", "xlsx")
 ] or ["pdf"]
+# Categorias de CVE consideradas "sem ação" (excluídas dos KPIs/gráfico/destaques,
+# mas mantidas na listagem completa). Opções: edge, cloud, azure_linux.
+# Edge/Chromium auto-atualiza; serviços cloud são corrigidos server-side pela MS.
+_noaction_env = os.getenv("PATCH_TUESDAY_NOACTION", "edge,cloud")
+PATCH_TUESDAY_NOACTION: set[str] = {
+    x.strip().lower() for x in _noaction_env.split(",")
+    if x.strip().lower() in ("edge", "cloud", "azure_linux")
+}
+# Se True, os destaques (KPIs/gráfico) contam apenas CVEs publicadas NA data
+# oficial do Patch Tuesday — exclui itens out-of-band/republicados de antes do
+# patch (que continuam na listagem completa, com flag).
+PATCH_TUESDAY_OFFICIAL_DATE_ONLY: bool = os.getenv(
+    "PATCH_TUESDAY_OFFICIAL_DATE_ONLY", "true"
+).lower() in ("1", "true", "yes")
 # Diretório de saída dos PDFs gerados.
 REPORTS_OUTPUT_DIR: str = os.path.abspath(
     os.getenv("REPORTS_OUTPUT_DIR", os.path.join(BASE_DIR, "data", "reports"))
 )
 GROQ_MODEL: str = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# Assinatura/crédito exibida no rodapé de cards e relatórios.
+SIGNATURE: str = (
+    "Developed by kkroth0 · Threat Intelligence • "
+    "Vulnerability Intelligence • Threat Monitoring"
+)
 
 # ─── Prompts de IA ──────────────────────────────────────────────────
 PROMPT_CVE_INTEL: str = (

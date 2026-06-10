@@ -116,9 +116,10 @@ def _status_label(v: dict[str, Any]) -> str:
 
 
 def _sort_key(v: dict[str, Any]) -> tuple:
-    """Ordena: exploradas/divulgadas primeiro, depois por CVSS desc."""
+    """Ordena: acionáveis primeiro, depois exploradas/divulgadas e CVSS desc."""
     sev_rank = {"Critical": 4, "Important": 3, "Moderate": 2, "Low": 1}.get(v.get("severity", ""), 0)
     return (
+        0 if v.get("requires_action") else 1,
         0 if v.get("exploited") else 1,
         0 if v.get("publicly_disclosed") else 1,
         -sev_rank,
@@ -157,37 +158,72 @@ def build_patch_tuesday_pdf(
     elements.append(Spacer(1, 6 * mm))
 
     sev = stats.get("severity_breakdown", {})
+    total = stats.get("total", 0)
+    total_all = stats.get("total_all", total)
+    buckets = stats.get("bucket_counts", {})
+    official = stats.get("official_date") or meta.get("release_date", "")[:10]
+
+    short = {"edge": "Edge", "cloud": "Cloud", "azure_linux": "Azure Linux", "out_of_band": "Out-of-band"}
+    excluded = [(k, buckets.get(k, 0)) for k in short if buckets.get(k)]
+    fora_txt = " · ".join(f"{short[k]} {n}" for k, n in excluded) or "nenhum"
+
     kpi_text = (
-        f"<b>Total de CVEs:</b> {stats.get('total', 0)} &nbsp;&nbsp;|&nbsp;&nbsp; "
+        f"<b>Exigem ação (on-prem, na data oficial):</b> {total} de {total_all} &nbsp;&nbsp;|&nbsp;&nbsp; "
         f"<b>Críticas:</b> {sev.get('Critical', 0)} &nbsp;|&nbsp; "
         f"<b>Importantes:</b> {sev.get('Important', 0)} &nbsp;|&nbsp; "
         f"<b>Moderadas:</b> {sev.get('Moderate', 0)} &nbsp;|&nbsp; "
         f"<b>Baixas:</b> {sev.get('Low', 0)}<br/>"
         f"<b>Exploradas ativamente:</b> {len(stats.get('exploited', []))} &nbsp;&nbsp;|&nbsp;&nbsp; "
         f"<b>Publicamente divulgadas:</b> {len(stats.get('publicly_disclosed', []))} &nbsp;&nbsp;|&nbsp;&nbsp; "
-        f"<b>Publicado em:</b> {meta.get('release_date', 'N/A')[:10]}"
+        f"<b>Patch oficial:</b> {official}<br/>"
+        f"<b>Fora do destaque (auto-update/cloud/out-of-band):</b> {fora_txt}"
     )
     elements.append(Paragraph(kpi_text, kpi_style))
     elements.append(Spacer(1, 5 * mm))
 
-    # ── Gráfico: vulnerabilidades por ativo Microsoft ─────────────────
+    # ── Gráfico: vulnerabilidades por ativo Microsoft (só acionáveis) ──
     chart = build_products_chart(stats)
     if chart is not None:
         section_style = ParagraphStyle(
             "ptSection", parent=styles["Heading2"], fontSize=12, spaceAfter=4
         )
-        elements.append(Paragraph("📊 Vulnerabilidades por ativo Microsoft (Top 12)", section_style))
+        elements.append(Paragraph(
+            "📊 Vulnerabilidades acionáveis por ativo Microsoft (Top 12)", section_style))
         elements.append(chart)
         elements.append(Spacer(1, 5 * mm))
 
     # ── Tabela de CVEs ────────────────────────────────────────────────
-    header = ["CVE", "Sev.", "CVSS", "Publicada", "Impacto", "Produto(s)", "KB", "Status"]
+    header = ["CVE", "Sev.", "CVSS", "Publicada", "Impacto", "Produto(s)", "KB", "Status", "Cat."]
+    n_cols = len(header)
     data: list[list[Any]] = [[Paragraph(f"<b>{h}</b>", cell) for h in header]]
 
     vulns = sorted(meta.get("vulns", []), key=_sort_key)
     sev_row_colors: list[tuple[int, Any]] = []
+    divider_row: int | None = None       # linha do separador acionável → resto
+    first_noncore_row: int | None = None  # 1ª linha de dados não-acionável
 
-    for idx, v in enumerate(vulns, start=1):
+    bucket_short = {
+        "edge": "Edge", "cloud": "Cloud", "azure_linux": "Azure Linux",
+        "out_of_band": "Out-of-band",
+    }
+    divider_cell = ParagraphStyle("div", parent=cell, fontSize=7.5, textColor=colors.white)
+    grey = colors.HexColor("#7a8694")
+
+    prev_core = True
+    row_idx = 0  # índice da linha na matriz `data` (0 = cabeçalho)
+    for v in vulns:
+        is_core = bool(v.get("requires_action"))
+
+        # Insere o divisor na transição acionável → não-acionável.
+        if prev_core and not is_core:
+            row_idx += 1
+            divider_row = row_idx
+            label = "🔕 SEM AÇÃO DE PATCH ON-PREM — auto-update / cloud / out-of-band (na listagem completa para registro)"
+            divider_cells = [Paragraph(f"<b>{label}</b>", divider_cell)] + ["" for _ in range(n_cols - 1)]
+            data.append(divider_cells)
+            first_noncore_row = row_idx + 1
+        prev_core = is_core
+
         families = v.get("product_families") or v.get("products") or []
         prod = ", ".join(families[:3])
         if len(families) > 3:
@@ -195,7 +231,9 @@ def build_patch_tuesday_pdf(
         kbs = ", ".join(k["kb"] for k in v.get("kbs", [])[:4]) or "—"
         score = v.get("cvss_score")
         score_txt = f"{score:.1f}" if score is not None else "—"
+        cat_txt = "—" if is_core else bucket_short.get(v.get("bucket", ""), "—")
 
+        row_idx += 1
         data.append([
             Paragraph(v.get("cve_id", ""), cell),
             Paragraph(v.get("severity", "") or "—", cell),
@@ -205,12 +243,17 @@ def build_patch_tuesday_pdf(
             Paragraph(prod or "—", cell),
             Paragraph(kbs, cell),
             Paragraph(_status_label(v) or "—", cell),
+            Paragraph(cat_txt, cell),
         ])
-        sev_color = _SEVERITY_COLORS.get(v.get("severity", ""))
-        if sev_color is not None:
-            sev_row_colors.append((idx, sev_color))
+        # Tarja de severidade só nas linhas acionáveis (core).
+        if is_core:
+            sev_color = _SEVERITY_COLORS.get(v.get("severity", ""))
+            if sev_color is not None:
+                sev_row_colors.append((row_idx, sev_color))
 
-    col_widths = [24 * mm, 16 * mm, 11 * mm, 20 * mm, 34 * mm, 84 * mm, 36 * mm, 24 * mm]
+    col_widths = [
+        22 * mm, 14 * mm, 10 * mm, 19 * mm, 30 * mm, 64 * mm, 33 * mm, 19 * mm, 24 * mm,
+    ]
     table = LongTable(data, colWidths=col_widths, repeatRows=1)
 
     style = [
@@ -224,14 +267,27 @@ def build_patch_tuesday_pdf(
         ("TOPPADDING", (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]
-    # Tarja colorida de severidade na coluna "Sev."
-    for row_idx, color in sev_row_colors:
-        style.append(("BACKGROUND", (1, row_idx), (1, row_idx), color))
-        style.append(("TEXTCOLOR", (1, row_idx), (1, row_idx), colors.white))
+    # Tarja colorida de severidade na coluna "Sev." (só acionáveis).
+    for r, color in sev_row_colors:
+        style.append(("BACKGROUND", (1, r), (1, r), color))
+        style.append(("TEXTCOLOR", (1, r), (1, r), colors.white))
+
+    # Linha divisória (faixa escura, mesclada).
+    if divider_row is not None:
+        style.append(("SPAN", (0, divider_row), (-1, divider_row)))
+        style.append(("BACKGROUND", (0, divider_row), (-1, divider_row), _HEADER_BG))
+        style.append(("TOPPADDING", (0, divider_row), (-1, divider_row), 4))
+        style.append(("BOTTOMPADDING", (0, divider_row), (-1, divider_row), 4))
+    # Texto esmaecido nas linhas não-acionáveis.
+    if first_noncore_row is not None:
+        style.append(("TEXTCOLOR", (0, first_noncore_row), (-1, -1), grey))
 
     table.setStyle(TableStyle(style))
     elements.append(table)
 
     doc.build(elements)
-    logger.info("PDF do Patch Tuesday gerado: %s (%d CVEs).", out_path, len(vulns))
+    logger.info(
+        "PDF do Patch Tuesday gerado: %s (%d CVEs, %d acionáveis).",
+        out_path, len(vulns), stats.get("total", 0),
+    )
     return out_path

@@ -142,7 +142,18 @@ class TelegramBotListener:
             elif command in ("/cti", "/latest"):
                 self._handle_latest_cti(chat_id)
             elif command in ("/cves", "/cve"):
-                self._handle_latest_cves(chat_id)
+                arg = parts[1].strip() if len(parts) > 1 else ""
+                if command == "/cve" and arg:
+                    self._handle_cve_lookup(chat_id, arg)
+                else:
+                    self._handle_latest_cves(chat_id)
+            elif command == "/feeds":
+                self._handle_feeds(chat_id)
+            elif command == "/stats":
+                arg = parts[1].strip() if len(parts) > 1 else ""
+                self._handle_stats(chat_id, arg)
+            elif command in ("/faq", "/ajuda"):
+                self._handle_faq(chat_id)
             elif command in ("/ativos", "/sync"):
                 self._handle_sync_ativos(chat_id)
             elif command == "/recarregar":
@@ -164,21 +175,25 @@ class TelegramBotListener:
             "━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "<b>[ Intelligence ]</b>\n"
             "<pre>/cti          Latest CTI reports\n"
-            "/latest       Latest CTI reports\n"
-            "/iniciar      Run collection pipeline</pre>\n"
+            "/iniciar      Run collection pipeline\n"
+            "/stats        Metrics dashboard\n"
+            "/feeds        Source health</pre>\n"
             "<b>[ Vulnerabilities ]</b>\n"
             "<pre>/cves         Prioritized CVE feed\n"
+            "/cve &lt;id&gt;     Look up a specific CVE\n"
             "/patchtuesday Microsoft Patch Tuesday report</pre>\n"
             "<b>[ Platform ]</b>\n"
             "<pre>/status       Health and statistics\n"
             "/idioma       Set alert language\n"
+            "/faq          How the platform works\n"
             "/recarregar   Reload configurations\n"
             "/ativos       Reload monitored assets\n"
             "/help         Command reference</pre>\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "Status: OPERATIONAL\n"
             "Collection Pipelines: ACTIVE\n"
-            "Threat Monitoring: ACTIVE"
+            "Threat Monitoring: ACTIVE\n\n"
+            f"<i>{config.SIGNATURE}</i>"
         )
         self._send_reply(chat_id, msg)
 
@@ -213,7 +228,8 @@ class TelegramBotListener:
             f"  Sent          {sent_news}\n"
             f"  Skipped       {skipped_news}\n"
             f"CVEs Stored     {total_cves}"
-            "</pre>"
+            "</pre>\n"
+            f"<i>{config.SIGNATURE}</i>"
         )
         self._send_reply(chat_id, msg)
 
@@ -374,8 +390,106 @@ class TelegramBotListener:
                 )
             else:
                 answer_callback_query(cb_id, "Unknown language")
+        elif data == "faq_menu":
+            answer_callback_query(cb_id)
+            self._handle_faq(chat_id)
+        elif data.startswith("faq:"):
+            answer_callback_query(cb_id)
+            self._send_faq_topic(chat_id, data.split(":", 1)[1])
+        elif data.startswith("stats:"):
+            answer_callback_query(cb_id)
+            try:
+                days = int(data.split(":", 1)[1])
+            except ValueError:
+                days = 7
+            self._handle_stats(chat_id, str(days))
         else:
             answer_callback_query(cb_id)
+
+    def _handle_cve_lookup(self, chat_id: int, arg: str) -> None:
+        """Consulta sob demanda de uma CVE específica (/cve CVE-YYYY-NNNN)."""
+        import re
+        m = re.search(r"CVE-\d{4}-\d{4,}", arg, re.IGNORECASE)
+        if not m:
+            self._send_reply(chat_id, "Invalid CVE id. Example: <code>/cve CVE-2021-44228</code>")
+            return
+        cve_id = m.group(0).upper()
+
+        def run_async() -> None:
+            self._send_reply(chat_id, f"<b>Looking up {cve_id}…</b>")
+            try:
+                from cve.pipeline import build_single_cve_alert
+                from core.notifications.formatters.cve_formatter import build_cve_telegram_message
+                alert = build_single_cve_alert(cve_id)
+                if alert is None:
+                    self._send_reply(chat_id, f"<b>{cve_id}</b> not found in the NVD.")
+                    return
+                self._send_reply(chat_id, build_cve_telegram_message(alert))
+            except Exception as e:
+                logger.error("Erro no lookup de CVE %s: %s", cve_id, e, exc_info=True)
+                self._send_reply(chat_id, f"<b>Lookup error:</b> {html.escape(str(e))}")
+
+        threading.Thread(target=run_async, name="cve-lookup", daemon=True).start()
+
+    def _handle_feeds(self, chat_id: int) -> None:
+        """Painel de saúde das fontes (/feeds)."""
+        def run_async() -> None:
+            try:
+                from cti.rss_client import feed_health
+                from core.notifications.formatters.report_formatter import build_feeds_telegram
+                rows = feed_health()
+                self._send_reply(chat_id, build_feeds_telegram(rows))
+            except Exception as e:
+                logger.error("Erro no /feeds: %s", e, exc_info=True)
+                self._send_reply(chat_id, f"<b>Feed check error:</b> {html.escape(str(e))}")
+
+        threading.Thread(target=run_async, name="feeds-health", daemon=True).start()
+
+    def _handle_stats(self, chat_id: int, arg: str = "") -> None:
+        """Painel de métricas (/stats) com botões 7/30 dias."""
+        from datetime import timedelta
+        from core.clients.telegram_client import send_message
+        from core.notifications.formatters.report_formatter import build_stats_telegram
+
+        days = 30 if ("30" in arg) else 7
+        until = datetime.now(timezone.utc)
+        since = until - timedelta(days=days)
+        try:
+            stats = storage.get_report_stats(since.isoformat(), until.isoformat())
+        except Exception as e:
+            logger.error("Erro no /stats: %s", e, exc_info=True)
+            self._send_reply(chat_id, f"<b>Stats error:</b> {html.escape(str(e))}")
+            return
+
+        text = build_stats_telegram(stats, f"Last {days} days")
+        keyboard = {"inline_keyboard": [[
+            {"text": "7 days", "callback_data": "stats:7"},
+            {"text": "30 days", "callback_data": "stats:30"},
+        ]]}
+        send_message(str(chat_id), text, parse_mode="HTML", reply_markup=keyboard)
+
+    def _handle_faq(self, chat_id: int) -> None:
+        """Menu inline do FAQ (/faq)."""
+        from core.clients.telegram_client import send_message
+        from commands.faq_content import FAQ
+        text = (
+            "<b>SOC SENTINEL · FAQ</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Select a topic:"
+        )
+        buttons = [[{"text": label, "callback_data": f"faq:{tid}"}] for tid, (label, _) in FAQ.items()]
+        send_message(str(chat_id), text, parse_mode="HTML", reply_markup={"inline_keyboard": buttons})
+
+    def _send_faq_topic(self, chat_id: int, topic_id: str) -> None:
+        """Envia o corpo de um tópico do FAQ com botão de voltar."""
+        from core.clients.telegram_client import send_message
+        from commands.faq_content import FAQ
+        entry = FAQ.get(topic_id)
+        if not entry:
+            return
+        _, body = entry
+        keyboard = {"inline_keyboard": [[{"text": "« Back", "callback_data": "faq_menu"}]]}
+        send_message(str(chat_id), body, parse_mode="HTML", reply_markup=keyboard)
 
     def _get_uptime(self) -> str:
         delta = datetime.now(timezone.utc) - self.start_time

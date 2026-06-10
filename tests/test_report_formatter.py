@@ -68,5 +68,4 @@ class TestTelegramMessage:
 
     def test_telegram_footer(self, sample_report_stats):
         msg = build_weekly_report_telegram(sample_report_stats)
-        assert "SOC Sentinel" in msg
-        assert "Monitoramento Automatizado" in msg
+        assert "kkroth0" in msg

@@ -3,6 +3,7 @@ core/notifications/formatters/cve_formatter.py — Monta mensagens HTML de CVE p
 """
 import html
 from typing import Any
+import config
 from core.logger import get_logger
 from core.notifications.formatters import clamp_telegram
 
@@ -55,4 +56,5 @@ def build_cve_telegram_message(cve: Any) -> str:
     if links:
         msg += "\n".join(links)
 
+    msg += f"\n\n<i>{html.escape(config.SIGNATURE)}</i>"
     return clamp_telegram(msg)

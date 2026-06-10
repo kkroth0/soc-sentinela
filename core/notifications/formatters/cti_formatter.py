@@ -13,6 +13,7 @@ import html
 from typing import Any
 from urllib.parse import urlparse
 
+import config
 from core.logger import get_logger
 from core.models import StandardCTINews
 from core.notifications.formatters import TELEGRAM_MAX_LEN, clamp_telegram
@@ -190,6 +191,7 @@ def build_news_telegram_message(news_input: Any) -> str:
             footer += f" — {reasons}"
         parts.append(footer)
 
+    parts.append(f"\n<i>{html.escape(config.SIGNATURE)}</i>")
     return clamp_telegram("\n".join(parts))
 
 

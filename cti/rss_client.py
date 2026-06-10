@@ -253,3 +253,45 @@ def _parse_entry(
         "weight_boost": weight_boost,
         "date": pub_date.isoformat(),
     }
+
+
+def feed_health() -> list[dict[str, Any]]:
+    """Diagnóstico de saúde de cada feed configurado (comando /feeds).
+
+    Status possíveis: OK, WAF-BYPASS (precisou do bypass Scrapling), EMPTY
+    (respondeu mas sem entries), FAIL (não baixou), STATIC (site não-RSS).
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/rss+xml,application/xml,text/html,*/*;q=0.8",
+    }
+
+    def _check(feed: dict[str, Any]) -> dict[str, Any]:
+        src = feed.get("source", "?")
+        layer = feed.get("layer", 0)
+        if feed.get("is_static"):
+            return {"source": src, "layer": layer, "status": "STATIC", "entries": 0}
+
+        url = feed["url"]
+        raw = None
+        via = "OK"
+        try:
+            resp = http_client.get(url, timeout=12, headers=headers, use_retry=False)
+            if resp.status_code == 200:
+                raw = resp.content
+            elif resp.status_code in (403, 406, 429, 503):
+                raw = _fetch_via_scrapling(url)
+                via = "WAF-BYPASS"
+        except Exception:
+            raw = _fetch_via_scrapling(url)
+            via = "WAF-BYPASS"
+
+        if not raw:
+            return {"source": src, "layer": layer, "status": "FAIL", "entries": 0}
+        n = len(feedparser.parse(raw).entries)
+        return {"source": src, "layer": layer, "status": via if n else "EMPTY", "entries": n}
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        rows = list(executor.map(_check, RSS_FEEDS))
+    return rows

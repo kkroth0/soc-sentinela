@@ -37,17 +37,22 @@ def build_patch_tuesday_summary(stats: dict[str, Any]) -> str:
     """Monta a mensagem HTML de resumo do Patch Tuesday para o Telegram."""
     period = html_mod.escape(_period_label(stats))
     total = stats.get("total", 0)
+    total_all = stats.get("total_all", total)
+    official = stats.get("official_date", "")
+    buckets = stats.get("bucket_counts", {})
     severity = stats.get("severity_breakdown", {})
     impact = stats.get("impact_breakdown", {})
     exploited = stats.get("exploited", [])
     disclosed = stats.get("publicly_disclosed", [])
     top_products = stats.get("top_products", [])
 
+    official_txt = f" (publicado em {html_mod.escape(official)})" if official else ""
     lines = [
         f"<b>🩹 Patch Tuesday — {period}</b>",
         "<i>Microsoft Security Updates (MSRC)</i>",
         "",
-        f"<b>📌 Total de vulnerabilidades corrigidas: {total}</b>",
+        f"<b>🔧 Vulnerabilidades que exigem ação: {total}</b>{official_txt}",
+        "<i>(on-premise, publicadas na data oficial do patch)</i>",
         "",
         "<b>⚠️ Severidade</b>",
     ]
@@ -86,8 +91,21 @@ def build_patch_tuesday_summary(stats: dict[str, Any]) -> str:
         for name, count in top_products[:6]:
             lines.append(f"• {html_mod.escape(name)}: {count} CVEs")
 
+    # Fora do destaque (auto-update / cloud / out-of-band) — só contexto.
+    excluded = {k: v for k, v in buckets.items() if k != "core" and v}
+    if excluded:
+        from reports.patch_tuesday import BUCKET_LABELS
+        lines.append("")
+        lines.append(f"<b>🔕 Fora do destaque ({total_all - total} de {total_all})</b>")
+        order = ["edge", "cloud", "azure_linux", "out_of_band"]
+        for key in order:
+            if excluded.get(key):
+                label = html_mod.escape(BUCKET_LABELS.get(key, key))
+                lines.append(f"• {label}: {excluded[key]}")
+        lines.append("<i>Sem ação de patch on-prem — incluídos na listagem completa.</i>")
+
     lines.append("")
-    lines.append("📎 <i>Listagem completa de todas as CVEs no(s) arquivo(s) anexo(s).</i>")
+    lines.append("📎 <i>Listagem completa de TODAS as CVEs no(s) arquivo(s) anexo(s).</i>")
     lines.append("🛡️ <i>SOC Sentinel — Monitoramento Automatizado</i>")
 
     return "\n".join(lines)

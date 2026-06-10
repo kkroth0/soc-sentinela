@@ -13,10 +13,21 @@ from core.logger import get_logger
 
 logger = get_logger("reports.patch_tuesday_export")
 
+# Rótulo legível da categoria de acionabilidade (bucket).
+_BUCKET_PT = {
+    "core": "Requer ação (on-prem)",
+    "out_of_band": "Out-of-band (antes do patch)",
+    "edge": "Edge/Chromium (auto-update)",
+    "cloud": "Serviço cloud (corrigido pela MS)",
+    "azure_linux": "Azure Linux",
+}
+
 # Cabeçalho e extratores de cada coluna a partir do dict normalizado da CVE.
 _COLUMNS: list[tuple[str, Any]] = [
     ("CVE", lambda v: v.get("cve_id", "")),
     ("Título", lambda v: v.get("title", "")),
+    ("Requer Ação", lambda v: "Sim" if v.get("requires_action") else "Não"),
+    ("Categoria", lambda v: _BUCKET_PT.get(v.get("bucket", ""), "")),
     ("Data de Publicação", lambda v: v.get("published", "")),
     ("Severidade", lambda v: v.get("severity", "")),
     ("CVSS", lambda v: v.get("cvss_score")),
@@ -34,9 +45,10 @@ _COLUMNS: list[tuple[str, Any]] = [
 
 
 def _sort_key(v: dict[str, Any]) -> tuple:
-    """Mesma ordenação do PDF: exploradas/divulgadas primeiro, depois CVSS desc."""
+    """Mesma ordenação do PDF: acionáveis primeiro, depois exploradas e CVSS desc."""
     sev_rank = {"Critical": 4, "Important": 3, "Moderate": 2, "Low": 1}.get(v.get("severity", ""), 0)
     return (
+        0 if v.get("requires_action") else 1,
         0 if v.get("exploited") else 1,
         0 if v.get("publicly_disclosed") else 1,
         -sev_rank,
@@ -91,7 +103,7 @@ def build_patch_tuesday_xlsx(meta: dict[str, Any], out_path: str) -> str:
             ws.cell(row=ws.max_row, column=sev_col).fill = fill
 
     # Larguras aproximadas por coluna.
-    widths = [16, 55, 16, 12, 8, 40, 22, 11, 14, 22, 18, 24, 40, 50, 45]
+    widths = [16, 55, 11, 26, 16, 12, 8, 40, 22, 11, 14, 22, 18, 24, 40, 50, 45]
     for i, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = width
     ws.freeze_panes = "A2"

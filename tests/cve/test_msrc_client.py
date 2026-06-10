@@ -93,6 +93,7 @@ def test_parse_vulnerability_fields():
     assert v1["severity"] == "Critical"  # pior severidade entre produtos
     assert v1["impact"] == "Remote Code Execution"
     assert v1["published"] == "2026-06-04"  # menor data do RevisionHistory
+    assert v1["action_category"] == ""  # tem KB numérica + não-Edge -> acionável
     assert v1["exploited"] is True
     assert v1["publicly_disclosed"] is True
     assert v1["exploitability"] == "Exploitation More Likely"
@@ -112,6 +113,20 @@ def test_parse_vulnerability_missing_optionals():
     assert v2["exploited"] is False
     assert v2["kbs"] == []
     assert v2["published"] == ""  # sem RevisionHistory nem ReleaseDate válido
+    assert v2["action_category"] == "cloud"  # sem KB numérica -> corrigido server-side
+
+
+def test_action_category():
+    edge = msrc_client._action_category("", ["Microsoft Edge (Chromium-based)"], [{"kb": "5094123"}])
+    assert edge == "edge"
+    azl = msrc_client._action_category("Important", ["azl3 kernel 6.6 on Azure Linux 3.0"], [])
+    assert azl == "azure_linux"
+    cloud = msrc_client._action_category("Critical", ["Microsoft 365 Copilot"], [{"kb": "Release Notes"}])
+    assert cloud == "cloud"
+    core = msrc_client._action_category("Important", ["Windows 11"], [{"kb": "5094123"}])
+    assert core == ""
+    # "Azure Stack Edge" NÃO é o navegador Edge (regressão).
+    assert msrc_client._action_category("Important", ["Azure Stack Edge"], [{"kb": "Release Notes"}]) != "edge"
 
 
 def test_product_family_collapses_skus():

@@ -141,6 +141,26 @@ def _extract_kbs(vuln: dict[str, Any]) -> list[dict[str, str]]:
     return kbs
 
 
+def _action_category(severity: str, families: list[str], kbs: list[dict[str, str]]) -> str:
+    """
+    Classifica a CVE quanto à acionabilidade:
+      'edge'         — Microsoft Edge/Chromium (auto-atualiza)
+      'azure_linux'  — pacotes do Azure Linux/Mariner
+      'cloud'        — serviço cloud corrigido server-side (sem KB numérica)
+      ''             — patch on-prem normal (Windows/Office/Server) — acionável
+    """
+    fams = [f.lower() for f in families]
+    # "Microsoft Edge" (navegador Chromium) — NÃO confundir com "Azure Stack Edge".
+    if fams and all("microsoft edge" in f for f in fams):
+        return "edge"
+    if any("azure linux" in f or f.startswith("azl") for f in fams):
+        return "azure_linux"
+    has_numeric_kb = any(k.get("kb", "").isdigit() for k in kbs)
+    if not has_numeric_kb:
+        return "cloud"
+    return ""
+
+
 def _publication_date(vuln: dict[str, Any]) -> str:
     """Data de publicação da CVE (YYYY-MM-DD) — menor data do RevisionHistory."""
     dates = [
@@ -180,6 +200,8 @@ def parse_vulnerability(vuln: dict[str, Any], product_map: dict[str, str]) -> di
     exploit = _parse_exploit_status(threats)
     products = _affected_products(vuln, product_map)
     families = sorted({_product_family(p) for p in products})
+    severity = _max_severity(threats)
+    kbs = _extract_kbs(vuln)
 
     raw_cwe = vuln.get("CWE")
     if isinstance(raw_cwe, dict):  # alguns docs trazem CWE como objeto único
@@ -192,12 +214,13 @@ def parse_vulnerability(vuln: dict[str, Any], product_map: dict[str, str]) -> di
         "title": (vuln.get("Title", {}) or {}).get("Value", "") or "",
         "cvss_score": cvss_score,
         "cvss_vector": cvss_vector,
-        "severity": _max_severity(threats),
+        "severity": severity,
         "impact": _primary_impact(threats),
         "published": _publication_date(vuln),
+        "action_category": _action_category(severity, families, kbs),
         "products": products,
         "product_families": families,
-        "kbs": _extract_kbs(vuln),
+        "kbs": kbs,
         "cwes": cwes,
         "exploited": exploit["exploited"],
         "publicly_disclosed": exploit["publicly_disclosed"],

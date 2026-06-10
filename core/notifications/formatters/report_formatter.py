@@ -5,6 +5,7 @@ Layout rico: KPIs, distribuição de risco, Top 5 vendors/produtos/clientes.
 
 import html as html_mod
 from typing import Any
+import config
 from core.logger import get_logger
 
 logger = get_logger("core.notifications.formatters.report_formatter")
@@ -88,6 +89,73 @@ def _build_report_telegram(stats: dict[str, Any], title: str) -> str:
             lines.append(f"• {source}: {s.get('total', 0)} artigos")
 
     lines.append("")
-    lines.append("🛡️ <i>SOC Sentinel — Monitoramento Automatizado</i>")
+    lines.append(f"<i>{html_mod.escape(config.SIGNATURE)}</i>")
 
+    return "\n".join(lines)
+
+
+def build_feeds_telegram(rows: list[dict[str, Any]]) -> str:
+    """Monta o painel de saúde das fontes (comando /feeds)."""
+    total = len(rows)
+    healthy = [r for r in rows if r["status"] in ("OK", "WAF-BYPASS", "STATIC")]
+    bypass = [r for r in rows if r["status"] == "WAF-BYPASS"]
+    problems = [r for r in rows if r["status"] in ("FAIL", "EMPTY")]
+
+    lines = [
+        "<b>FEED HEALTH</b>",
+        "━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"Operational: <b>{len(healthy)}/{total}</b>",
+        "",
+    ]
+    if bypass:
+        lines.append("<b>[ WAF bypass active ]</b>")
+        for r in bypass:
+            lines.append(f"• {html_mod.escape(str(r['source']))} ({r['entries']})")
+        lines.append("")
+    if problems:
+        lines.append("<b>[ Needs attention ]</b>")
+        for r in problems:
+            lines.append(f"• {html_mod.escape(str(r['source']))} — {r['status']}")
+    else:
+        lines.append("All feeds operational.")
+    lines.append("")
+    lines.append(f"<i>{html_mod.escape(config.SIGNATURE)}</i>")
+    return "\n".join(lines)
+
+
+def build_stats_telegram(stats: dict[str, Any], period_label: str) -> str:
+    """Monta o painel de métricas (comando /stats), a partir de get_report_stats."""
+    risk = stats.get("risk_distribution", {})
+    lines = [
+        "<b>SOC SENTINEL · METRICS</b>",
+        "━━━━━━━━━━━━━━━━━━━━━━━━",
+        f"Period: <b>{html_mod.escape(period_label)}</b>",
+        "",
+        "<b>[ Volume ]</b>",
+        f"CVEs alerted: <b>{stats.get('total_cves', 0)}</b>",
+        f"CTI reports: <b>{stats.get('total_news', 0)}</b>",
+        f"Avg CVSS: <b>{stats.get('avg_cvss', 0.0)}</b>",
+        "",
+        "<b>[ Risk Distribution ]</b>",
+        f"🔴 CRITICAL: {risk.get('CRITICAL', 0)}",
+        f"🟠 HIGH: {risk.get('HIGH', 0)}",
+        f"🟡 MEDIUM: {risk.get('MEDIUM', 0)}",
+        f"🟢 LOW: {risk.get('LOW', 0)}",
+    ]
+    top_vendors = stats.get("top_vendors", [])
+    if top_vendors:
+        lines += ["", "<b>[ Top Vendors ]</b>"]
+        for i, v in enumerate(top_vendors[:5], 1):
+            lines.append(f"{i}. {html_mod.escape(str(v.get('vendor', '?')).upper())} — {v.get('total', 0)}")
+    top_clients = stats.get("top_clients", [])
+    if top_clients:
+        lines += ["", "<b>[ Most Impacted Assets ]</b>"]
+        for c in top_clients[:5]:
+            lines.append(f"• {html_mod.escape(str(c.get('client', '?')))} — {c.get('count', 0)}")
+    top_sources = stats.get("top_sources", [])
+    if top_sources:
+        lines += ["", "<b>[ Top Sources ]</b>"]
+        for s in top_sources[:5]:
+            lines.append(f"• {html_mod.escape(str(s.get('source', '?')))} — {s.get('total', 0)}")
+    lines += ["", f"<i>{html_mod.escape(config.SIGNATURE)}</i>"]
     return "\n".join(lines)

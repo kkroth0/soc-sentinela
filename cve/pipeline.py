@@ -157,3 +157,46 @@ def run(
         stats["total"], stats["alerted"], stats["skipped"], stats["errors"],
     )
     return stats
+
+
+def build_single_cve_alert(cve_id: str) -> StandardCVEAlert | None:
+    """Busca, enriquece e monta o alerta de uma CVE específica (consulta /cve sob demanda).
+
+    Reutiliza o mesmo caminho do pipeline (NVD → risk_scorer → IA → advisory),
+    mas sem a guarda de envio/dedup. Retorna None se a CVE não existir na NVD.
+    """
+    cve = nvd_client.fetch_single_cve(cve_id)
+    if not cve:
+        return None
+
+    try:
+        cve["impacted_clients"] = asset_matcher.match_cve_to_clients(
+            cve, asset_matcher.normalize_asset_map(get_asset_map())
+        )
+    except Exception as exc:
+        logger.debug("Asset match falhou para %s: %s", cve_id, exc)
+        cve["impacted_clients"] = []
+
+    risk_scorer.enrich_cve(cve, get_blacklist())
+    groq_engine.process_cve_intelligence(cve)
+
+    return StandardCVEAlert(
+        cve_id=cve.get("cve_id", cve_id),
+        cvss_score=cve.get("cvss_score"),
+        severity=cve.get("severity", "UNKNOWN"),
+        risk_tag=cve.get("risk_tag", "LOW"),
+        vendor=cve.get("vendor", ""),
+        product=cve.get("product", ""),
+        description=cve.get("description_pt") or cve.get("description", ""),
+        url=cve.get("url", ""),
+        date=cve.get("date", ""),
+        impacted_clients=cve.get("impacted_clients", []),
+        epss_score=cve.get("epss_score"),
+        in_cisa_kev=cve.get("in_cisa_kev", False),
+        has_exploit_db=cve.get("has_known_exploit", False),
+        headline=cve.get("headline_pt", ""),
+        cwes=cve.get("cwes", []),
+        threats=cve.get("threats", []),
+        advisory_url=advisories.get_advisory_url(cve.get("vendor", ""), cve.get("cve_id", cve_id)),
+        raw_payload=cve,
+    )
