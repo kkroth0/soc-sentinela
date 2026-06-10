@@ -17,6 +17,7 @@ logger = get_logger("reports.patch_tuesday_export")
 _COLUMNS: list[tuple[str, Any]] = [
     ("CVE", lambda v: v.get("cve_id", "")),
     ("Título", lambda v: v.get("title", "")),
+    ("Data de Publicação", lambda v: v.get("published", "")),
     ("Severidade", lambda v: v.get("severity", "")),
     ("CVSS", lambda v: v.get("cvss_score")),
     ("Vetor CVSS", lambda v: v.get("cvss_vector", "")),
@@ -90,7 +91,7 @@ def build_patch_tuesday_xlsx(meta: dict[str, Any], out_path: str) -> str:
             ws.cell(row=ws.max_row, column=sev_col).fill = fill
 
     # Larguras aproximadas por coluna.
-    widths = [16, 55, 12, 8, 40, 22, 11, 14, 22, 18, 24, 40, 50, 45]
+    widths = [16, 55, 16, 12, 8, 40, 22, 11, 14, 22, 18, 24, 40, 50, 45]
     for i, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = width
     ws.freeze_panes = "A2"

@@ -42,7 +42,7 @@ class TestTelegramBotListener:
             # Deve enviar aviso de acesso negado
             mock_reply.assert_called_once()
             args, _ = mock_reply.call_args
-            assert "Acesso Não Autorizado" in args[1]
+            assert "ACCESS DENIED" in args[1]
 
     @patch("commands.telegram_bot.TelegramBotListener._send_reply")
     def test_process_message_ignores_non_command(self, mock_reply):

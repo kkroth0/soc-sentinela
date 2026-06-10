@@ -1,8 +1,9 @@
 """
 reports/patch_tuesday_pdf.py — Geração do PDF do relatório de Patch Tuesday.
 
-Layout A4 paisagem: cabeçalho com KPIs + tabela paginada com TODAS as CVEs do
-documento MSRC do mês (CVE, severidade, CVSS, impacto, produtos, KB, status).
+Layout A4 paisagem: cabeçalho com KPIs + gráfico de vulnerabilidades por ativo
+Microsoft + tabela paginada com TODAS as CVEs do documento MSRC do mês
+(CVE, severidade, CVSS, data de publicação, impacto, produtos, KB, status).
 """
 
 from typing import Any
@@ -12,6 +13,8 @@ from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.charts.barcharts import HorizontalBarChart
 from reportlab.platypus import (
     LongTable,
     Paragraph,
@@ -34,6 +37,66 @@ _SEVERITY_COLORS = {
 
 _HEADER_BG = colors.HexColor("#1f2d3d")
 _ROW_ALT = colors.HexColor("#f4f6f8")
+
+
+def _nice_step(max_value: int) -> int:
+    """Passo 'redondo' para o eixo de valores (~6 marcações)."""
+    if max_value <= 6:
+        return 1
+    raw = max_value / 6
+    for step in (1, 2, 5, 10, 20, 25, 50, 100, 200, 500, 1000):
+        if step >= raw:
+            return step
+    return 1000
+
+
+def build_products_chart(stats: dict[str, Any], max_items: int = 12) -> Drawing | None:
+    """Gráfico de barras horizontais: nº de vulnerabilidades por ativo Microsoft."""
+    data = stats.get("top_products", [])[:max_items]
+    if not data:
+        return None
+
+    # Inverte para a maior barra aparecer no topo.
+    data = list(reversed(data))
+    names = [str(n) for n, _ in data]
+    values = [int(c) for _, c in data]
+    max_v = max(values)
+
+    drawing_width = 760
+    bar_h = 14
+    chart_height = max(150, len(values) * (bar_h + 7) + 35)
+
+    d = Drawing(drawing_width, chart_height)
+    bc = HorizontalBarChart()
+    bc.x = 185           # espaço à esquerda para os nomes dos produtos
+    bc.y = 12
+    bc.width = drawing_width - bc.x - 45
+    bc.height = chart_height - 25
+    bc.data = [values]
+    bc.barWidth = bar_h
+    bc.groupSpacing = 7
+    bc.valueAxis.valueMin = 0
+    bc.valueAxis.valueMax = max(1, int(max_v * 1.12))
+    bc.valueAxis.valueStep = _nice_step(max_v)
+    bc.valueAxis.labels.fontSize = 7
+    bc.valueAxis.gridStrokeColor = colors.HexColor("#e1e5ea")
+    bc.valueAxis.visibleGrid = True
+    bc.categoryAxis.categoryNames = names
+    bc.categoryAxis.labels.fontSize = 7
+    bc.categoryAxis.labels.boxAnchor = "e"
+    bc.categoryAxis.labels.dx = -5
+    bc.categoryAxis.strokeColor = colors.HexColor("#aab2bd")
+    bc.bars[0].fillColor = colors.HexColor("#2e86c1")
+    bc.bars[0].strokeColor = colors.HexColor("#1b4f72")
+    bc.bars[0].strokeWidth = 0.4
+    # Rótulo com o valor na ponta de cada barra.
+    bc.barLabels.fontSize = 7
+    bc.barLabels.boxAnchor = "w"
+    bc.barLabels.dx = 4
+    bc.barLabelFormat = "%d"
+    bc.barLabelArray = None
+    d.add(bc)
+    return d
 
 
 def _cell_style() -> ParagraphStyle:
@@ -107,8 +170,18 @@ def build_patch_tuesday_pdf(
     elements.append(Paragraph(kpi_text, kpi_style))
     elements.append(Spacer(1, 5 * mm))
 
+    # ── Gráfico: vulnerabilidades por ativo Microsoft ─────────────────
+    chart = build_products_chart(stats)
+    if chart is not None:
+        section_style = ParagraphStyle(
+            "ptSection", parent=styles["Heading2"], fontSize=12, spaceAfter=4
+        )
+        elements.append(Paragraph("📊 Vulnerabilidades por ativo Microsoft (Top 12)", section_style))
+        elements.append(chart)
+        elements.append(Spacer(1, 5 * mm))
+
     # ── Tabela de CVEs ────────────────────────────────────────────────
-    header = ["CVE", "Sev.", "CVSS", "Impacto", "Produto(s)", "KB", "Status"]
+    header = ["CVE", "Sev.", "CVSS", "Publicada", "Impacto", "Produto(s)", "KB", "Status"]
     data: list[list[Any]] = [[Paragraph(f"<b>{h}</b>", cell) for h in header]]
 
     vulns = sorted(meta.get("vulns", []), key=_sort_key)
@@ -127,6 +200,7 @@ def build_patch_tuesday_pdf(
             Paragraph(v.get("cve_id", ""), cell),
             Paragraph(v.get("severity", "") or "—", cell),
             Paragraph(score_txt, cell),
+            Paragraph(v.get("published", "") or "—", cell),
             Paragraph(v.get("impact", "") or "—", cell),
             Paragraph(prod or "—", cell),
             Paragraph(kbs, cell),
@@ -136,7 +210,7 @@ def build_patch_tuesday_pdf(
         if sev_color is not None:
             sev_row_colors.append((idx, sev_color))
 
-    col_widths = [26 * mm, 17 * mm, 12 * mm, 38 * mm, 92 * mm, 38 * mm, 28 * mm]
+    col_widths = [24 * mm, 16 * mm, 11 * mm, 20 * mm, 34 * mm, 84 * mm, 36 * mm, 24 * mm]
     table = LongTable(data, colWidths=col_widths, repeatRows=1)
 
     style = [

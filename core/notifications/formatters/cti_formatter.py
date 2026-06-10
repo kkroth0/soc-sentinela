@@ -23,13 +23,13 @@ logger = get_logger("core.notifications.formatters.cti_formatter")
 # severidade). O rótulo é honesto quanto à origem; `title_icon` e o rótulo da
 # segunda seção (ameaça vs. contexto) seguem adaptando-se à camada.
 _LAYER_META: dict[int, dict[str, str]] = {
-    1: {"label": "🛡️ Vendor Advisory",          "title_icon": "🚨", "analysis": "🛡️ IMPACTO &amp; MITIGAÇÃO"},
-    2: {"label": "📰 Security News",             "title_icon": "🚨", "analysis": "🛡️ IMPACTO &amp; MITIGAÇÃO"},
-    3: {"label": "🔬 Threat Research",           "title_icon": "🚨", "analysis": "🛡️ IMPACTO &amp; MITIGAÇÃO"},
-    4: {"label": "📡 Radar Regional (BR/LATAM)", "title_icon": "📡", "analysis": "🎯 POR QUE IMPORTA"},
+    1: {"label": "Vendor Advisory",          "title_icon": "🚨", "analysis": "IMPACT &amp; MITIGATION"},
+    2: {"label": "Security News",            "title_icon": "🚨", "analysis": "IMPACT &amp; MITIGATION"},
+    3: {"label": "Threat Research",          "title_icon": "🚨", "analysis": "IMPACT &amp; MITIGATION"},
+    4: {"label": "Regional Radar (BR/LATAM)", "title_icon": "", "analysis": "WHY IT MATTERS"},
 }
 _DEFAULT_META: dict[str, str] = {
-    "label": "📰 Notícia", "title_icon": "📰", "analysis": "📝 ANÁLISE",
+    "label": "Report", "title_icon": "🚨", "analysis": "ANALYSIS",
 }
 
 _SEV_EMOJI: dict[str, str] = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🟢"}
@@ -37,10 +37,10 @@ _SEV_EMOJI: dict[str, str] = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "�
 # Faixas de severidade derivadas do score de relevância (0-100). A COR do cartão
 # segue a urgência real, não a camada — um item regional crítico fica vermelho.
 _SEVERITY_BANDS: list[tuple[int, str, str]] = [
-    (80, "🔴", "CRÍTICO"),
-    (60, "🟠", "ALTO"),
-    (40, "🟡", "MÉDIO"),
-    (0,  "🟢", "BAIXO"),
+    (80, "🔴", "CRITICAL"),
+    (60, "🟠", "HIGH"),
+    (40, "🟡", "MEDIUM"),
+    (0,  "🟢", "LOW"),
 ]
 
 
@@ -49,7 +49,7 @@ def _severity(score: int) -> tuple[str, str]:
     for threshold, emoji, label in _SEVERITY_BANDS:
         if score >= threshold:
             return emoji, label
-    return "🟢", "BAIXO"
+    return "🟢", "LOW"
 
 
 def _coerce_news(news_input: Any) -> StandardCTINews:
@@ -121,36 +121,36 @@ def build_news_telegram_message(news_input: Any) -> str:
     sev_emoji, sev_label = _severity(news.score)
     parts.append(f"{sev_emoji} <b>{sev_label}</b> · {meta['label']}")
     parts.append("━━━━━━━━━━━━━━")
-    parts.append(f"{meta['title_icon']} <b>{title}</b>\n")
+    parts.append(f"{meta['title_icon']} <b>{title}</b>\n".lstrip())
 
     # ── Metadados ──
-    parts.append(f"🏢 <b>Fonte:</b> {source}")
+    parts.append(f"<b>Source:</b> {source}")
     if news.date:
-        parts.append(f"📅 <b>Data:</b> {html.escape(news.date[:10])}")
+        parts.append(f"<b>Date:</b> {html.escape(news.date[:10])}")
     if news.matched_assets:
         assets = ", ".join(html.escape(str(a)) for a in news.matched_assets)
-        parts.append(f"🎯 <b>Ativos Monitorados:</b> {assets}")
+        parts.append(f"<b>Monitored Assets:</b> {assets}")
     if news.cwes:
-        parts.append(f"🏷️ <b>CWE:</b> {', '.join(html.escape(c) for c in news.cwes)}")
+        parts.append(f"<b>CWE:</b> {', '.join(html.escape(c) for c in news.cwes)}")
     if news.threats:
-        parts.append(f"👾 <b>Ameaças:</b> {', '.join(html.escape(t) for t in news.threats)}")
+        parts.append(f"<b>Threats:</b> {', '.join(html.escape(t) for t in news.threats)}")
     if news.sectors:
-        parts.append(f"🏭 <b>Setores Visados:</b> {', '.join(html.escape(s) for s in news.sectors)}")
+        parts.append(f"<b>Targeted Sectors:</b> {', '.join(html.escape(s) for s in news.sectors)}")
     if news.countries:
-        parts.append(f"🌍 <b>Países/Regiões:</b> {', '.join(html.escape(c) for c in news.countries)}")
+        parts.append(f"<b>Countries/Regions:</b> {', '.join(html.escape(c) for c in news.countries)}")
     if news.ttps:
-        ttp_lines = ["🎯 <b>TTPs (MITRE ATT&amp;CK):</b>"]
-        ttp_lines += [f"  • {html.escape(t)}" for t in news.ttps[:6]]
+        ttp_lines = ["\n<b>[ MITRE ATT&amp;CK ]</b>"]
+        ttp_lines += [f"• {html.escape(t)}" for t in news.ttps[:6]]
         parts.append("\n".join(ttp_lines))
     if news.cves:
-        cve_lines = ["🔍 <b>CVEs Relacionadas:</b>"]
+        cve_lines = ["\n<b>[ Related CVEs ]</b>"]
         for c in news.cves[:5]:
             c_id = html.escape(str(c.get("cve_id", "")))
             cvss = c.get("cvss_score")
             cvss_txt = f"CVSS {cvss}" if cvss is not None else "CVSS N/A"
             sev = str(c.get("risk_tag", "LOW"))
-            emoji = _SEV_EMOJI.get(sev, "⚪")
-            cve_lines.append(f"  • {emoji} <code>{c_id}</code> ({cvss_txt} · {sev})")
+            emoji = _SEV_EMOJI.get(sev, "")
+            cve_lines.append(f"• {emoji} <code>{c_id}</code> ({cvss_txt} · {sev})")
         parts.append("\n".join(cve_lines))
 
     parts.append("")  # linha em branco antes do corpo
@@ -159,24 +159,24 @@ def build_news_telegram_message(news_input: Any) -> str:
     if news.summary:
         paragraphs = [p.strip() for p in news.summary.split("\n\n") if p.strip()]
         if len(paragraphs) >= 2:
-            parts.append(f"📝 <b>RESUMO</b>\n{html.escape(paragraphs[0])}\n")
+            parts.append(f"<b>[ Executive Summary ]</b>\n{html.escape(paragraphs[0])}\n")
             body = "\n\n".join(html.escape(p) for p in paragraphs[1:])
-            parts.append(f"{meta['analysis']}\n{body}\n")
+            parts.append(f"<b>[ {meta['analysis']} ]</b>\n{body}\n")
         else:
-            parts.append(f"📝 <b>RESUMO</b>\n{html.escape(news.summary)}\n")
+            parts.append(f"<b>[ Executive Summary ]</b>\n{html.escape(news.summary)}\n")
 
     # ── IoCs ──
     iocs_text = _render_iocs(news.iocs)
     if iocs_text:
-        parts.append(f"🛡️ <b>INDICADORES (IoCs)</b>\n{iocs_text}\n")
+        parts.append(f"<b>[ Indicators of Compromise ]</b>\n{iocs_text}\n")
 
     # ── Link (hyperlink limpo em vez de URL crua) ──
     if news.url:
-        parts.append(f'🔗 <a href="{url}">Abrir fonte original</a>')
+        parts.append(f'🔗 <a href="{url}">Source</a>')
 
     # ── Referências citadas no corpo (fontes externas) ──
     if news.references:
-        ref_lines = ["📎 <b>Referências citadas:</b>"]
+        ref_lines = ["📎 <b>References:</b>"]
         for i, ref in enumerate(news.references[:6], 1):
             dom = urlparse(ref).netloc.replace("www.", "") or "link"
             ref_lines.append(f'  {i}. <a href="{html.escape(ref)}">{html.escape(dom)}</a>')
@@ -184,7 +184,7 @@ def build_news_telegram_message(news_input: Any) -> str:
 
     # ── Rodapé de relevância ──
     if news.score and news.score > 0:
-        footer = f"\n📊 <b>Relevância:</b> {news.score}/100"
+        footer = f"\n<b>Relevance:</b> {news.score}/100"
         if news.risk_reasons:
             reasons = ", ".join(html.escape(r) for r in news.risk_reasons[:4])
             footer += f" — {reasons}"
@@ -203,8 +203,8 @@ def build_hunting_telegram_message(news_input: Any) -> str | None:
         return None
 
     parts: list[str] = [
-        "🎯 <b>SENTINEL HUNTING</b> · Microsoft Sentinel / Defender XDR",
-        "━━━━━━━━━━━━━━",
+        "<b>SENTINEL HUNTING</b> · Microsoft Sentinel / Defender XDR",
+        "━━━━━━━━━━━━━━━━━━━━━━━━",
         f"<i>{html.escape(news.title)}</i>\n",
     ]
     for i, h in enumerate(hunts, 1):

@@ -138,12 +138,6 @@
     "weight_boost": 10
   },
   {
-    "url": "https://www.sentinelone.com/labs/feed/",
-    "source": "SentinelOne Labs",
-    "layer": 3,
-    "weight_boost": 5
-  },
-  {
     "url": "https://www.welivesecurity.com/en/rss/feed/",
     "source": "WeLiveSecurity",
     "layer": 3,

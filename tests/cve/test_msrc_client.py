@@ -45,6 +45,12 @@ def _sample_doc() -> dict:
                     {"Type": 2, "Description": {"Value": "5094123"}, "URL": "", "ProductID": ["2"]},
                     {"Type": 3, "Description": {"Value": "5094123"}, "URL": "https://support/x", "ProductID": ["1"]},
                 ],
+                # Republicada: revisão inicial mais antiga que a do mês -> menor data vence.
+                "RevisionHistory": [
+                    {"Number": "1.1", "Date": "2026-06-09T07:00:00"},
+                    {"Number": "1.0", "Date": "2026-06-04T07:00:00"},
+                ],
+                "ReleaseDate": "0001-01-01T00:00:00",
             },
             {
                 # Sem CVSS, sem KB, não explorada.
@@ -86,6 +92,7 @@ def test_parse_vulnerability_fields():
     assert v1["cvss_score"] == 8.8  # maior BaseScore
     assert v1["severity"] == "Critical"  # pior severidade entre produtos
     assert v1["impact"] == "Remote Code Execution"
+    assert v1["published"] == "2026-06-04"  # menor data do RevisionHistory
     assert v1["exploited"] is True
     assert v1["publicly_disclosed"] is True
     assert v1["exploitability"] == "Exploitation More Likely"
@@ -104,6 +111,7 @@ def test_parse_vulnerability_missing_optionals():
     assert v2["impact"] == "Spoofing"
     assert v2["exploited"] is False
     assert v2["kbs"] == []
+    assert v2["published"] == ""  # sem RevisionHistory nem ReleaseDate válido
 
 
 def test_product_family_collapses_skus():

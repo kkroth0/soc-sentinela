@@ -141,6 +141,21 @@ def _extract_kbs(vuln: dict[str, Any]) -> list[dict[str, str]]:
     return kbs
 
 
+def _publication_date(vuln: dict[str, Any]) -> str:
+    """Data de publicação da CVE (YYYY-MM-DD) — menor data do RevisionHistory."""
+    dates = [
+        r.get("Date", "")
+        for r in (vuln.get("RevisionHistory") or [])
+        if r.get("Date") and not r["Date"].startswith("0001")
+    ]
+    if dates:
+        return min(dates)[:10]
+    rd = vuln.get("ReleaseDate", "")
+    if rd and not rd.startswith("0001"):
+        return rd[:10]
+    return ""
+
+
 def _affected_products(vuln: dict[str, Any], product_map: dict[str, str]) -> list[str]:
     """Lista os nomes dos produtos afetados (ProductStatuses 'Known Affected')."""
     names: list[str] = []
@@ -179,6 +194,7 @@ def parse_vulnerability(vuln: dict[str, Any], product_map: dict[str, str]) -> di
         "cvss_vector": cvss_vector,
         "severity": _max_severity(threats),
         "impact": _primary_impact(threats),
+        "published": _publication_date(vuln),
         "products": products,
         "product_families": families,
         "kbs": _extract_kbs(vuln),

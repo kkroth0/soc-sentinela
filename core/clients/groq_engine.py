@@ -12,6 +12,14 @@ from core.logger import get_logger
 
 logger = get_logger("core.clients.groq_engine")
 
+
+def _localized(base_prompt: str) -> str:
+    """Anexa ao prompt a diretiva do idioma de saída configurado (runtime)."""
+    from core import storage
+    lang = str(storage.get_state("output_language", config.DEFAULT_OUTPUT_LANGUAGE)).lower()
+    directive = config.LANG_DIRECTIVES.get(lang, config.LANG_DIRECTIVES["pt"])
+    return f"{base_prompt}\n\n{directive}"
+
 # Lista de modelos para Fallback em caso de Rate Limit (429)
 # O Groq aplica limites de tokens por modelo, então alternar modelos resolve o bloqueio.
 FALLBACK_MODELS = [
@@ -141,7 +149,7 @@ def process_cve_intelligence(cve: dict[str, Any]) -> None:
         cve, 
         prompt, 
         {"description_pt": "description_pt", "headline_pt": "headline_pt"},
-        config.PROMPT_CVE_INTEL
+        _localized(config.PROMPT_CVE_INTEL)
     )
 
 def process_news_intelligence(article: dict[str, Any]) -> None:
@@ -159,5 +167,5 @@ def process_news_intelligence(article: dict[str, Any]) -> None:
         prompt,
         {"title_pt": "title_pt", "summary_pt": "summary_pt", "iocs": "iocs_pt",
          "sectors_ai": "sectors_pt", "countries_ai": "countries_pt"},
-        config.PROMPT_NEWS_INTEL
+        _localized(config.PROMPT_NEWS_INTEL)
     )

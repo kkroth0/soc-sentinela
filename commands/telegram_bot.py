@@ -87,6 +87,8 @@ class TelegramBotListener:
                     self.offset = update["update_id"] + 1
                     if "message" in update:
                         self._process_message(update["message"])
+                    elif "callback_query" in update:
+                        self._process_callback(update["callback_query"])
             except requests.exceptions.RequestException as e:
                 # Erros normais de rede/timeout do long-polling
                 logger.debug("Erro de rede ao buscar atualizações (long polling): %s", e)
@@ -119,7 +121,7 @@ class TelegramBotListener:
             if text.startswith("/"):
                 logger.warning("Tentativa de comando de chat não autorizado: %d (usuário: %s, comando: %s)", 
                                chat_id, chat.get("username", "desconhecido"), text)
-                self._send_reply(chat_id, "🚫 <b>Acesso Não Autorizado</b>\nSeu ID de chat não está autorizado nas configurações deste bot.")
+                self._send_reply(chat_id, "<b>ACCESS DENIED</b>\nThis chat is not authorized.")
             return
 
         if not text.startswith("/"):
@@ -147,27 +149,36 @@ class TelegramBotListener:
                 self._handle_recarregar(chat_id)
             elif command in ("/patchtuesday", "/patch"):
                 self._handle_patch_tuesday(chat_id)
+            elif command in ("/idioma", "/language", "/lang"):
+                self._handle_language(chat_id)
             else:
-                self._send_reply(chat_id, f"❓ <b>Comando desconhecido:</b> {command}\nDigite /help para listar comandos.")
+                self._send_reply(chat_id, f"<b>Unknown command:</b> {html.escape(command)}\nType /help for the command reference.")
         except Exception as e:
             logger.error("Erro ao processar comando '%s': %s", command, e, exc_info=True)
-            self._send_reply(chat_id, f"❌ <b>Erro interno ao processar comando:</b> {html.escape(str(e))}")
+            self._send_reply(chat_id, f"<b>Internal error:</b> {html.escape(str(e))}")
 
     def _handle_help(self, chat_id: int) -> None:
         msg = (
-            "🤖 <b>SOC Sentinel — Assistente Threat Intelligence</b> 🛡️\n"
-            "━━━━━━━━━━━━━━━━━━━━━━\n"
-            "Olá! Eu sou o assistente do SOC especializado em Cyber Threat Intelligence (CTI).\n\n"
-            "<b>Comandos disponíveis:</b>\n"
-            "🔹 `/status` — Uptime, configurações e estatísticas do sistema.\n"
-            "🔹 `/iniciar` — Executa manualmente a varredura e análise de CTI.\n"
-            "🔹 `/cti` ou `/latest` — Exibe as 10 últimas notícias CTI registradas.\n"
-            "🔹 `/cves` — Exibe as 10 últimas CVEs priorizadas.\n"
-            "🔹 `/patchtuesday` — Gera e envia o relatório do Patch Tuesday do mês (MSRC).\n"
-            "🔹 `/ativos` — Recarrega o inventário local de ativos monitorados.\n"
-            "🔹 `/recarregar` — Atualiza categorias CTI e aliases em memória.\n"
-            "🔹 `/help` — Mostra esta lista de ajuda.\n\n"
-            "<i>A coleta e análise automatizada de CTI continuam rodando em background periodicamente.</i>"
+            "<b>SOC SENTINEL COMMAND CENTER</b>\n"
+            "<i>Threat Intelligence • Vulnerability Intelligence • Threat Monitoring</i>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "<b>[ Intelligence ]</b>\n"
+            "<pre>/cti          Latest CTI reports\n"
+            "/latest       Latest CTI reports\n"
+            "/iniciar      Run collection pipeline</pre>\n"
+            "<b>[ Vulnerabilities ]</b>\n"
+            "<pre>/cves         Prioritized CVE feed\n"
+            "/patchtuesday Microsoft Patch Tuesday report</pre>\n"
+            "<b>[ Platform ]</b>\n"
+            "<pre>/status       Health and statistics\n"
+            "/idioma       Set alert language\n"
+            "/recarregar   Reload configurations\n"
+            "/ativos       Reload monitored assets\n"
+            "/help         Command reference</pre>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Status: OPERATIONAL\n"
+            "Collection Pipelines: ACTIVE\n"
+            "Threat Monitoring: ACTIVE"
         )
         self._send_reply(chat_id, msg)
 
@@ -186,58 +197,63 @@ class TelegramBotListener:
             total_news = sent_news = skipped_news = total_cves = "?"
 
         msg = (
-            "⚙️ <b>Status do Sistema</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🟢 <b>Bot:</b> Em execução\n"
-            f"⏱️ <b>Tempo de Atividade:</b> {uptime}\n"
-            f"🧠 <b>Modelo de IA:</b> {config.GROQ_MODEL}\n"
-            f"⏱️ <b>Janela CTI:</b> {config.NEWS_TIME_WINDOW_MINUTES} min\n"
-            f"🛡️ <b>Janela CVE:</b> {config.CVE_SCHEDULE_MINUTES} min\n\n"
-            "📊 <b>Estatísticas da Base:</b>\n"
-            f"• Total Notícias Analisadas: <b>{total_news}</b>\n"
-            f"  └ 📬 Enviadas: <b>{sent_news}</b>\n"
-            f"  └ ⏭️ Ignoradas: <b>{skipped_news}</b>\n"
-            f"• CVEs Relacionadas / Salvas: <b>{total_cves}</b>"
+            "<b>SOC SENTINEL · SYSTEM STATUS</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "<b>[ Runtime ]</b>\n"
+            "<pre>"
+            f"State       OPERATIONAL\n"
+            f"Uptime      {uptime}\n"
+            f"AI Model    {config.GROQ_MODEL}\n"
+            f"CTI Window  {config.NEWS_TIME_WINDOW_MINUTES} min\n"
+            f"CVE Window  {config.CVE_SCHEDULE_MINUTES} min"
+            "</pre>\n"
+            "<b>[ Database ]</b>\n"
+            "<pre>"
+            f"News Analyzed   {total_news}\n"
+            f"  Sent          {sent_news}\n"
+            f"  Skipped       {skipped_news}\n"
+            f"CVEs Stored     {total_cves}"
+            "</pre>"
         )
         self._send_reply(chat_id, msg)
 
     def _handle_iniciar(self, chat_id: int) -> None:
         if self._pipeline_trigger_callback:
             def run_async() -> None:
-                self._send_reply(chat_id, "🔄 <b>Iniciando pipelines de coleta e análise manualmente...</b>")
+                self._send_reply(chat_id, "<b>Collection pipeline started</b> — running manually...")
                 try:
                     self._pipeline_trigger_callback()
-                    self._send_reply(chat_id, "✅ <b>Pipelines concluídos com sucesso!</b> Novos alertas foram encaminhados se identificados.")
+                    self._send_reply(chat_id, "<b>Pipeline complete.</b> New alerts dispatched if any were identified.")
                 except Exception as e:
-                    self._send_reply(chat_id, f"❌ <b>Erro na execução do pipeline:</b> {html.escape(str(e))}")
+                    self._send_reply(chat_id, f"<b>Pipeline error:</b> {html.escape(str(e))}")
 
             threading.Thread(target=run_async, name="manual-telegram-trigger", daemon=True).start()
         else:
-            self._send_reply(chat_id, "⚠️ Callback do pipeline não configurado no orquestrador.")
+            self._send_reply(chat_id, "Pipeline trigger not configured in the orchestrator.")
 
     def _handle_latest_cti(self, chat_id: int) -> None:
         news = storage.get_recent_news(limit=10)
         if not news:
-            self._send_reply(chat_id, "📭 Nenhuma notícia CTI recente encontrada na base de dados.")
+            self._send_reply(chat_id, "No recent CTI reports in the database.")
             return
 
-        lines = ["📰 <b>Últimas Notícias CTI (Top 10)</b>", "━━━━━━━━━━━━━━━━━━━━━━"]
+        lines = ["<b>LATEST CTI REPORTS · TOP 10</b>", "━━━━━━━━━━━━━━━━━━━━━━━━"]
         for idx, item in enumerate(news, 1):
-            title = html.escape(item.get("title", "Sem Título"))
-            source = html.escape(item.get("source", "Desconhecido"))
+            title = html.escape(item.get("title", "Untitled"))
+            source = html.escape(item.get("source", "Unknown"))
             date = item.get("sent_at", "")[:16]
-            lines.append(f"{idx}. <b>{title}</b>\n   └ Fonte: {source} | Data: {date}")
-        
+            lines.append(f"{idx}. <b>{title}</b>\n    {source} | {date}")
+
         self._send_reply(chat_id, "\n".join(lines))
 
     def _handle_latest_cves(self, chat_id: int) -> None:
         cves = storage.get_recent_cves(limit=10)
         if not cves:
-            self._send_reply(chat_id, "📭 Nenhuma CVE recente registrada na base de dados.")
+            self._send_reply(chat_id, "No recent CVEs in the database.")
             return
 
         sev_emoji = {"CRITICAL": "🔴", "HIGH": "🟠", "MEDIUM": "🟡", "LOW": "🟢"}
-        lines = ["🛡️ <b>Últimas CVEs (Top 10)</b>", "━━━━━━━━━━━━━━━━━━━━━━"]
+        lines = ["<b>PRIORITIZED CVE FEED · TOP 10</b>", "━━━━━━━━━━━━━━━━━━━━━━━━"]
         for idx, item in enumerate(cves, 1):
             cve_id = str(item.get("cve_id", "?"))
             cve_id_safe = html.escape(cve_id)
@@ -255,24 +271,24 @@ class TelegramBotListener:
             # Linha 2: vendor/produto (se houver) + data
             meta = []
             if vendor:
-                meta.append(f"🏢 {html.escape(vendor)}")
+                meta.append(html.escape(vendor))
             if product:
-                meta.append(f"📦 {html.escape(product)}")
-            meta.append(f"📅 {date}")
-            lines.append("   └ " + " · ".join(meta))
+                meta.append(html.escape(product))
+            meta.append(date)
+            lines.append("    " + " · ".join(meta))
 
         self._send_reply(chat_id, "\n".join(lines))
 
     def _handle_sync_ativos(self, chat_id: int) -> None:
         def sync_async() -> None:
-            self._send_reply(chat_id, "🔄 <b>Recarregando inventário local de ativos...</b>")
+            self._send_reply(chat_id, "<b>Reloading monitored asset inventory...</b>")
             try:
                 if data_manager.force_reload():
-                    self._send_reply(chat_id, "✅ <b>Inventário recarregado!</b> Ativos atualizados a partir do arquivo local.")
+                    self._send_reply(chat_id, "<b>Inventory reloaded.</b> Assets updated from the local file.")
                 else:
-                    self._send_reply(chat_id, "⚠️ <b>Arquivo de ativos não encontrado.</b> Verifique o caminho configurado em <code>ASSETS_CACHE_PATH</code>.")
+                    self._send_reply(chat_id, "<b>Asset file not found.</b> Check the <code>ASSETS_CACHE_PATH</code> setting.")
             except Exception as e:
-                self._send_reply(chat_id, f"❌ <b>Falha ao recarregar ativos:</b> {html.escape(str(e))}")
+                self._send_reply(chat_id, f"<b>Asset reload failed:</b> {html.escape(str(e))}")
 
         threading.Thread(target=sync_async, name="telegram-assets-reload", daemon=True).start()
 
@@ -285,24 +301,24 @@ class TelegramBotListener:
             doc_id = msrc_client.get_patch_tuesday_doc_id()
             self._send_reply(
                 chat_id,
-                f"🩹 <b>Gerando relatório de Patch Tuesday ({html.escape(doc_id)})...</b>\n"
-                "<i>Coletando o documento MSRC e montando os anexos — pode levar alguns segundos.</i>",
+                f"<b>Generating Patch Tuesday report ({html.escape(doc_id)})...</b>\n"
+                "<i>Fetching the MSRC document and building attachments — this may take a few seconds.</i>",
             )
             try:
                 # force=True: envio manual intencional (ignora guarda de duplicidade).
                 # poll=False: se o documento do mês ainda não foi publicado, falha rápido.
                 sent = patch_tuesday.run_patch_tuesday(force=True, poll=False)
                 if sent:
-                    self._send_reply(chat_id, "✅ <b>Relatório de Patch Tuesday enviado!</b>")
+                    self._send_reply(chat_id, "<b>Patch Tuesday report sent.</b>")
                 else:
                     self._send_reply(
                         chat_id,
-                        f"⚠️ <b>Não foi possível gerar o relatório.</b>\n"
-                        f"O documento <code>{html.escape(doc_id)}</code> pode ainda não ter sido "
-                        "publicado pela Microsoft, ou houve falha no envio. Verifique os logs.",
+                        f"<b>Could not generate the report.</b>\n"
+                        f"Document <code>{html.escape(doc_id)}</code> may not have been "
+                        "published by Microsoft yet, or sending failed. Check the logs.",
                     )
             except Exception as e:
-                self._send_reply(chat_id, f"❌ <b>Erro ao gerar Patch Tuesday:</b> {html.escape(str(e))}")
+                self._send_reply(chat_id, f"<b>Patch Tuesday error:</b> {html.escape(str(e))}")
 
         threading.Thread(target=run_async, name="telegram-patch-tuesday", daemon=True).start()
 
@@ -311,9 +327,55 @@ class TelegramBotListener:
             reload_aliases()
             reload_advisories()
             reload_categories()
-            self._send_reply(chat_id, "✅ <b>Parâmetros (Aliases, Advisories e Categorias) recarregados com sucesso!</b>")
+            self._send_reply(chat_id, "<b>Configurations reloaded</b> — feeds aliases, advisories and categories.")
         except Exception as e:
-            self._send_reply(chat_id, f"❌ <b>Erro ao recarregar parâmetros:</b> {html.escape(str(e))}")
+            self._send_reply(chat_id, f"<b>Reload error:</b> {html.escape(str(e))}")
+
+    def _handle_language(self, chat_id: int) -> None:
+        """Exibe o menu de seleção de idioma de saída dos alertas."""
+        from core.clients.telegram_client import send_message
+        current = str(storage.get_state("output_language", config.DEFAULT_OUTPUT_LANGUAGE)).lower()
+        current_label = config.LANG_LABELS.get(current, current)
+        text = (
+            "<b>ALERT LANGUAGE</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Current: <b>{html.escape(current_label)}</b>\n\n"
+            "Select the language for AI-generated alert content:"
+        )
+        keyboard = {"inline_keyboard": [[
+            {"text": "Português", "callback_data": "setlang:pt"},
+            {"text": "English", "callback_data": "setlang:en"},
+        ]]}
+        send_message(str(chat_id), text, parse_mode="HTML", reply_markup=keyboard)
+
+    def _process_callback(self, cb: dict[str, Any]) -> None:
+        """Trata cliques em teclados inline (ex.: seleção de idioma)."""
+        from core.clients.telegram_client import answer_callback_query, send_message
+        cb_id = cb.get("id", "")
+        data = cb.get("data", "")
+        chat_id = cb.get("message", {}).get("chat", {}).get("id")
+
+        if not chat_id or not self._is_authorized(chat_id):
+            answer_callback_query(cb_id, "Not authorized")
+            return
+
+        if data.startswith("setlang:"):
+            lang = data.split(":", 1)[1]
+            if lang in config.LANG_LABELS:
+                storage.set_state("output_language", lang)
+                label = config.LANG_LABELS[lang]
+                logger.info("Idioma de saída alterado para '%s' por chat %s", lang, chat_id)
+                answer_callback_query(cb_id, f"Language set: {label}")
+                send_message(
+                    str(chat_id),
+                    f"<b>Alert language set to {html.escape(label)}.</b>\n"
+                    "New alerts will be generated in this language.",
+                    parse_mode="HTML",
+                )
+            else:
+                answer_callback_query(cb_id, "Unknown language")
+        else:
+            answer_callback_query(cb_id)
 
     def _get_uptime(self) -> str:
         delta = datetime.now(timezone.utc) - self.start_time

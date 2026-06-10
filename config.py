@@ -153,6 +153,17 @@ PROMPT_NEWS_INTEL: str = (
 )
 
 
+# Idioma de saída das análises geradas por IA (configurável em runtime via /idioma).
+DEFAULT_OUTPUT_LANGUAGE: str = os.getenv("OUTPUT_LANGUAGE", "pt").lower()
+LANG_DIRECTIVES: dict[str, str] = {
+    "pt": "IDIOMA DE SAÍDA OBRIGATÓRIO: Português (Brasil). Todos os campos de texto "
+          "gerados (títulos, resumos, descrições) DEVEM estar em português.",
+    "en": "MANDATORY OUTPUT LANGUAGE: English. All generated text fields (titles, "
+          "summaries, descriptions) MUST be written in English.",
+}
+LANG_LABELS: dict[str, str] = {"pt": "Português", "en": "English"}
+
+
 def validate_config() -> None:
     """Valida se as configurações críticas estão presentes."""
     # Precisamos da GROQ para inteligência

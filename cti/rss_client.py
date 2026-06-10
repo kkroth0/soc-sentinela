@@ -73,6 +73,26 @@ def fetch_recent_articles(time_window_minutes: int | None = None) -> list[dict[s
     return all_articles
 
 
+def _fetch_via_scrapling(url: str) -> Any:
+    """Baixa um feed via Scrapling (curl_cffi) para furar WAFs (ex.: Akamai/CISA).
+
+    O fingerprint TLS de browser + Referer do Google passa por proteções que
+    bloqueiam o `requests` puro. Retorna o corpo (bytes/str) ou None.
+    """
+    try:
+        from scrapling.fetchers import Fetcher
+        page = Fetcher.get(url, timeout=20, headers={
+            "Referer": "https://www.google.com/",
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        })
+        if page.status == 200:
+            return page.body
+        logger.debug("Bypass Scrapling retornou HTTP %s para %s", page.status, url)
+    except Exception as exc:
+        logger.debug("Bypass Scrapling falhou para %s: %s", url, exc)
+    return None
+
+
 def _parse_feed(
     feed_info: dict[str, Any],
     cutoff: datetime,
@@ -99,15 +119,26 @@ def _parse_feed(
             "Upgrade-Insecure-Requests": "1"
         }
         resp = http_client.get(
-            url, 
-            timeout=15, 
+            url,
+            timeout=15,
             headers=headers,
             use_retry=False
         )
-        resp.raise_for_status()
-        raw_xml = resp.content
+        if resp.status_code == 200:
+            raw_xml = resp.content
+        elif resp.status_code in (403, 406, 429, 503):
+            # Provável WAF (Akamai/Cloudflare). Tenta o bypass via Scrapling.
+            logger.info("Feed '%s' HTTP %d — tentando bypass via Scrapling...", source, resp.status_code)
+            raw_xml = _fetch_via_scrapling(url)
+        else:
+            resp.raise_for_status()
+            raw_xml = resp.content
     except Exception as exc:
-        logger.warning("Tempo limite ou falha ao baixar feed '%s': %s", source, exc)
+        logger.debug("Falha HTTP no feed '%s' (%s) — tentando bypass via Scrapling...", source, exc)
+        raw_xml = _fetch_via_scrapling(url)
+
+    if not raw_xml:
+        logger.warning("Falha ao baixar feed '%s' (inclusive bypass).", source)
         return []
 
     feed = feedparser.parse(raw_xml)
